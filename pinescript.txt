@@ -1,0 +1,880 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Long-Term Investor Indicator V3.1 (Long + Short Enhanced)
+
+//@version=6
+indicator("Long-Term Investor Pro V3", shorttitle="LTI Pro V3", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 설정 (SETTINGS)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 기본 설정
+grpMain = "━━━ 기본 설정 ━━━"
+tradeDirection = input.string("Both", "매매 방향", options=["Long Only", "Short Only", "Both"], group=grpMain)
+showMTF = input.bool(true, "멀티타임프레임 분석 표시", group=grpMain)
+signalSensitivity = input.string("Normal", "신호 민감도", options=["Conservative", "Normal", "Aggressive"], group=grpMain)
+
+// 이동평균 설정
+grpMA = "━━━ 이동평균 설정 ━━━"
+emaFast = input.int(20, "빠른 EMA", minval=5, maxval=50, group=grpMA)
+emaMid = input.int(50, "중간 EMA", minval=20, maxval=100, group=grpMA)
+emaSlow = input.int(200, "느린 EMA", minval=100, maxval=300, group=grpMA)
+showEMA = input.bool(true, "EMA 표시", group=grpMA)
+emaFastColor = input.color(color.rgb(249, 167, 53), "EMA 20 색상", group=grpMA)
+emaMidColor = input.color(color.rgb(255, 153, 0, 11), "EMA 50 색상", group=grpMA)
+emaSlowColor = input.color(color.rgb(86, 0, 126), "EMA 200 색상", group=grpMA)
+emaFastWidth = input.int(1, "EMA 20 두께", minval=1, maxval=5, group=grpMA)
+emaMidWidth = input.int(2, "EMA 50 두께", minval=1, maxval=5, group=grpMA)
+emaSlowWidth = input.int(2, "EMA 200 두께", minval=1, maxval=5, group=grpMA)
+
+// RSI 설정
+grpRSI = "━━━ RSI 설정 ━━━"
+rsiLength = input.int(14, "RSI 기간", minval=5, maxval=30, group=grpRSI)
+rsiOversold = input.int(30, "과매도 기준", minval=10, maxval=40, group=grpRSI)
+rsiOverbought = input.int(70, "과매수 기준", minval=60, maxval=90, group=grpRSI)
+
+// MACD 설정
+grpMACD = "━━━ MACD 설정 ━━━"
+macdFast = input.int(12, "MACD Fast", minval=5, maxval=20, group=grpMACD)
+macdSlow = input.int(26, "MACD Slow", minval=20, maxval=40, group=grpMACD)
+macdSignal = input.int(9, "MACD Signal", minval=5, maxval=15, group=grpMACD)
+
+// 볼린저밴드 설정
+grpBB = "━━━ 볼린저밴드 설정 ━━━"
+bbLength = input.int(20, "BB 기간", minval=10, maxval=50, group=grpBB)
+bbMult = input.float(2.0, "BB 배수", minval=1.0, maxval=3.0, step=0.1, group=grpBB)
+showBB = input.bool(true, "BB 표시", group=grpBB)
+bbColor = input.color(color.blue, "BB 색상", group=grpBB)
+
+// 지지/저항 설정
+grpSR = "━━━ 지지/저항 설정 ━━━"
+srLookback = input.int(20, "S/R 탐색 기간", minval=10, maxval=50, group=grpSR)
+showSR = input.bool(true, "S/R 라인 표시", group=grpSR)
+srExtend = input.int(50, "S/R 라인 연장 (봉 수)", minval=10, maxval=200, group=grpSR)
+
+// 거래량 설정
+grpVol = "━━━ 거래량 설정 ━━━"
+volLength = input.int(20, "거래량 MA 기간", minval=10, maxval=50, group=grpVol)
+volThreshold = input.float(1.5, "거래량 급증 배수", minval=1.1, maxval=3.0, step=0.1, group=grpVol)
+
+// 신호 설정
+grpSignal = "━━━ 신호 설정 ━━━"
+showLongSignals = input.bool(true, "롱 신호 표시", group=grpSignal)
+showShortSignals = input.bool(true, "숏 신호 표시", group=grpSignal)
+showScoreTable = input.bool(true, "점수판 표시", group=grpSignal)
+showDivergence = input.bool(true, "다이버전스 표시", group=grpSignal)
+minScoreForSignal = input.int(55, "최소 신호 점수", minval=40, maxval=80, group=grpSignal)
+
+// ATR 설정
+grpATR = "━━━ ATR/리스크 설정 ━━━"
+atrLength = input.int(14, "ATR 기간", minval=5, maxval=30, group=grpATR)
+atrMult = input.float(2.0, "손절 ATR 배수", minval=1.0, maxval=4.0, step=0.5, group=grpATR)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 민감도 설정 (SENSITIVITY)
+// ══════════════════════════════════════════════════════════════════════════════
+
+rsiLongThreshold = signalSensitivity == "Conservative" ? 35 : signalSensitivity == "Aggressive" ? 45 : 40
+rsiShortThreshold = signalSensitivity == "Conservative" ? 65 : signalSensitivity == "Aggressive" ? 55 : 60
+scoreThreshold = signalSensitivity == "Conservative" ? 65 : signalSensitivity == "Aggressive" ? 50 : minScoreForSignal
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 멀티타임프레임 분석 (MTF ANALYSIS)
+// ══════════════════════════════════════════════════════════════════════════════
+
+tf4H = "240"
+tfD = "D"
+tfW = "W"
+
+// 4시간봉 데이터
+[ema20_4H, ema50_4H, ema200_4H] = request.security(syminfo.tickerid, tf4H, [ta.ema(close, emaFast), ta.ema(close, emaMid), ta.ema(close, emaSlow)])
+rsi_4H = request.security(syminfo.tickerid, tf4H, ta.rsi(close, rsiLength))
+
+// 일봉 데이터
+[ema20_D, ema50_D, ema200_D] = request.security(syminfo.tickerid, tfD, [ta.ema(close, emaFast), ta.ema(close, emaMid), ta.ema(close, emaSlow)])
+rsi_D = request.security(syminfo.tickerid, tfD, ta.rsi(close, rsiLength))
+
+// 주봉 데이터
+[ema20_W, ema50_W, ema200_W] = request.security(syminfo.tickerid, tfW, [ta.ema(close, emaFast), ta.ema(close, emaMid), ta.ema(close, emaSlow)])
+rsi_W = request.security(syminfo.tickerid, tfW, ta.rsi(close, rsiLength))
+
+// 추세 판단 함수
+getTrend(ema20, ema50, ema200) =>
+    if ema20 > ema50 and ema50 > ema200
+        1
+    else if ema20 < ema50 and ema50 < ema200
+        -1
+    else
+        0
+
+trend_4H = getTrend(ema20_4H, ema50_4H, ema200_4H)
+trend_D = getTrend(ema20_D, ema50_D, ema200_D)
+trend_W = getTrend(ema20_W, ema50_W, ema200_W)
+
+mtfScore = trend_4H + trend_D + trend_W
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 현재 타임프레임 지표 계산 (CURRENT TF INDICATORS)
+// ══════════════════════════════════════════════════════════════════════════════
+
+ema20 = ta.ema(close, emaFast)
+ema50 = ta.ema(close, emaMid)
+ema200 = ta.ema(close, emaSlow)
+
+rsiValue = ta.rsi(close, rsiLength)
+
+[macdLine, signalLine, histLine] = ta.macd(close, macdFast, macdSlow, macdSignal)
+
+[bbMiddle, bbUpper, bbLower] = ta.bb(close, bbLength, bbMult)
+bbWidth = (bbUpper - bbLower) / bbMiddle * 100
+bbPosition = (close - bbLower) / (bbUpper - bbLower)
+
+atrValue = ta.atr(atrLength)
+
+volMA = ta.sma(volume, volLength)
+volRatio = volume / volMA
+isHighVolume = volRatio > volThreshold
+
+// 전역 변수로 미리 계산 (조건문 내 함수 호출 방지)
+isFalling5 = ta.falling(close, 5)
+isRising5 = ta.rising(close, 5)
+highest20 = ta.highest(high, 20)
+lowest20 = ta.lowest(low, 20)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 추세 분석 (TREND ANALYSIS)
+// ══════════════════════════════════════════════════════════════════════════════
+
+isUptrend = ema20 > ema50 and ema50 > ema200
+isDowntrend = ema20 < ema50 and ema50 < ema200
+isSideways = not isUptrend and not isDowntrend
+
+isWeakUptrend = ema20 > ema50 or close > ema200
+isWeakDowntrend = ema20 < ema50 or close < ema200
+
+trendStrength = math.abs(ema20 - ema200) / ema200 * 100
+
+goldenCross = ta.crossover(ema50, ema200)
+deathCross = ta.crossunder(ema50, ema200)
+shortGoldenCross = ta.crossover(ema20, ema50)
+shortDeathCross = ta.crossunder(ema20, ema50)
+
+priceAboveEMA20 = close > ema20
+priceAboveEMA50 = close > ema50
+priceAboveEMA200 = close > ema200
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 다이버전스 감지 (DIVERGENCE DETECTION)
+// ══════════════════════════════════════════════════════════════════════════════
+
+pivotHighPrice = ta.pivothigh(high, 5, 5)
+pivotLowPrice = ta.pivotlow(low, 5, 5)
+pivotHighRSI = ta.pivothigh(rsiValue, 5, 5)
+pivotLowRSI = ta.pivotlow(rsiValue, 5, 5)
+
+var float prevLowPrice = na
+var float prevLowRSI = na
+
+bullishDivergence = false
+if not na(pivotLowPrice)
+    if not na(prevLowPrice) and not na(prevLowRSI)
+        if pivotLowPrice < prevLowPrice and pivotLowRSI > prevLowRSI
+            bullishDivergence := true
+    prevLowPrice := pivotLowPrice
+    prevLowRSI := pivotLowRSI
+
+var float prevHighPrice = na
+var float prevHighRSI = na
+
+bearishDivergence = false
+if not na(pivotHighPrice)
+    if not na(prevHighPrice) and not na(prevHighRSI)
+        if pivotHighPrice > prevHighPrice and pivotHighRSI < prevHighRSI
+            bearishDivergence := true
+    prevHighPrice := pivotHighPrice
+    prevHighRSI := pivotHighRSI
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 지지/저항 계산 (SUPPORT/RESISTANCE)
+// ══════════════════════════════════════════════════════════════════════════════
+
+pivotHigh = ta.pivothigh(high, srLookback, srLookback)
+pivotLow = ta.pivotlow(low, srLookback, srLookback)
+
+var float[] resistanceLevels = array.new_float(0)
+var float[] supportLevels = array.new_float(0)
+var int[] resistanceBars = array.new_int(0)
+var int[] supportBars = array.new_int(0)
+
+if not na(pivotHigh)
+    array.unshift(resistanceLevels, pivotHigh)
+    array.unshift(resistanceBars, bar_index - srLookback)
+    if array.size(resistanceLevels) > 5
+        array.pop(resistanceLevels)
+        array.pop(resistanceBars)
+
+if not na(pivotLow)
+    array.unshift(supportLevels, pivotLow)
+    array.unshift(supportBars, bar_index - srLookback)
+    if array.size(supportLevels) > 5
+        array.pop(supportLevels)
+        array.pop(supportBars)
+
+getNearestSupport() =>
+    float nearest = na
+    if array.size(supportLevels) > 0
+        for i = 0 to array.size(supportLevels) - 1
+            level = array.get(supportLevels, i)
+            if level < close
+                if na(nearest) or level > nearest
+                    nearest := level
+    nearest
+
+getNearestResistance() =>
+    float nearest = na
+    if array.size(resistanceLevels) > 0
+        for i = 0 to array.size(resistanceLevels) - 1
+            level = array.get(resistanceLevels, i)
+            if level > close
+                if na(nearest) or level < nearest
+                    nearest := level
+    nearest
+
+nearestSupport = getNearestSupport()
+nearestResistance = getNearestResistance()
+
+supportProximity = not na(nearestSupport) ? (close - nearestSupport) / close * 100 : 100
+resistanceProximity = not na(nearestResistance) ? (nearestResistance - close) / close * 100 : 100
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 눌림목/되돌림 감지 (PULLBACK DETECTION)
+// ══════════════════════════════════════════════════════════════════════════════
+
+isPullbackLong = (isUptrend or isWeakUptrend) and close < ema20 and rsiValue < 50
+isStrongPullbackLong = isPullbackLong and (close <= bbLower * 1.02 or rsiValue < rsiOversold)
+
+isPullbackShort = (isDowntrend or isWeakDowntrend) and close > ema20 and rsiValue > 50
+isStrongPullbackShort = isPullbackShort and (close >= bbUpper * 0.98 or rsiValue > rsiOverbought)
+
+resistanceRejection = resistanceProximity < 2 and rsiValue > 60 and close < open
+supportBounce = supportProximity < 2 and rsiValue < 40 and close > open
+
+ema50Test = close <= ema50 * 1.01 and close >= ema50 * 0.99
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 계단식 하락/상승 감지 (STAIR-STEP)
+// ══════════════════════════════════════════════════════════════════════════════
+
+var int consecutiveDown = 0
+consecutiveDown := close < close[1] ? consecutiveDown + 1 : 0
+
+var int consecutiveUp = 0
+consecutiveUp := close > close[1] ? consecutiveUp + 1 : 0
+
+declineAccelerating = consecutiveDown >= 3 and isFalling5 and close < ema20
+rallyAccelerating = consecutiveUp >= 3 and isRising5 and close > ema20
+
+oversoldBounce = rsiValue < 25 and consecutiveDown >= 3 and close < bbLower
+overboughtDrop = rsiValue > 75 and consecutiveUp >= 3 and close > bbUpper
+
+stairLongL2 = ema200
+stairLongL3 = ema200 * 0.95
+stairLongL4 = ema200 * 0.90
+
+stairShortL2 = ema200
+stairShortL3 = ema200 * 1.05
+stairShortL4 = ema200 * 1.10
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 점수 시스템 (SCORING SYSTEM)
+// ══════════════════════════════════════════════════════════════════════════════
+
+calcLongScore() =>
+    float score = 50
+
+    if isUptrend
+        score += 20
+    else if isWeakUptrend
+        score += 10
+    else if isDowntrend
+        score -= 15
+
+    score += mtfScore * 5
+
+    if rsiValue < rsiOversold
+        score += 15
+    else if rsiValue < rsiLongThreshold
+        score += 10
+    else if rsiValue > rsiOverbought
+        score -= 15
+    else if rsiValue > 60
+        score -= 5
+
+    if macdLine > signalLine and histLine > histLine[1]
+        score += 10
+    else if macdLine < signalLine and histLine < histLine[1]
+        score -= 10
+
+    if bbPosition < 0.2
+        score += 10
+    else if bbPosition > 0.8
+        score -= 10
+
+    if supportProximity < 3
+        score += 10
+    else if supportProximity < 5
+        score += 5
+
+    if isHighVolume and close > close[1]
+        score += 5
+    else if isHighVolume and close < close[1]
+        score -= 3
+
+    if isPullbackLong
+        score += 10
+    if isStrongPullbackLong
+        score += 5
+
+    if bullishDivergence
+        score += 10
+
+    math.max(0, math.min(100, score))
+
+calcShortScore() =>
+    float score = 50
+
+    if isDowntrend
+        score += 20
+    else if isWeakDowntrend
+        score += 10
+    else if isUptrend
+        score -= 15
+
+    score -= mtfScore * 5
+
+    if rsiValue > rsiOverbought
+        score += 15
+    else if rsiValue > rsiShortThreshold
+        score += 10
+    else if rsiValue < rsiOversold
+        score -= 15
+    else if rsiValue < 40
+        score -= 5
+
+    if macdLine < signalLine and histLine < histLine[1]
+        score += 10
+    else if macdLine > signalLine and histLine > histLine[1]
+        score -= 10
+
+    if bbPosition > 0.8
+        score += 10
+    else if bbPosition < 0.2
+        score -= 10
+
+    if resistanceProximity < 3
+        score += 10
+    else if resistanceProximity < 5
+        score += 5
+
+    if isHighVolume and close < close[1]
+        score += 5
+    else if isHighVolume and close > close[1]
+        score -= 3
+
+    if isPullbackShort
+        score += 10
+    if isStrongPullbackShort
+        score += 5
+
+    if bearishDivergence
+        score += 10
+
+    math.max(0, math.min(100, score))
+
+longScore = calcLongScore()
+shortScore = calcShortScore()
+
+getScoreGrade(score) =>
+    if score >= 80
+        "A+"
+    else if score >= 70
+        "A"
+    else if score >= 60
+        "B"
+    else if score >= 50
+        "C"
+    else if score >= 40
+        "D"
+    else
+        "F"
+
+longGrade = getScoreGrade(longScore)
+shortGrade = getScoreGrade(shortScore)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 매매 신호 - LONG
+// ══════════════════════════════════════════════════════════════════════════════
+
+showLong = tradeDirection == "Long Only" or tradeDirection == "Both"
+
+primaryLong = goldenCross or (shortGoldenCross and priceAboveEMA200 and rsiValue < 60)
+
+pullbackLong = (isStrongPullbackLong or (isPullbackLong and ema50Test) or supportBounce) and longScore >= scoreThreshold
+
+addLong = isPullbackLong and longScore >= 65 and not primaryLong and not pullbackLong
+
+// 물타기 조건 (중복 방지는 라벨에서 처리)
+condAvgDownL2 = close <= stairLongL2 * 1.01 and close > stairLongL3
+condAvgDownL3 = close <= stairLongL3 * 1.01 and close > stairLongL4
+condAvgDownL4 = close <= stairLongL4 * 1.01
+
+// 상태 추적용 변수
+var bool wasAvgDownL2 = false
+var bool wasAvgDownL3 = false
+var bool wasAvgDownL4 = false
+
+avgDownL2 = condAvgDownL2 and not wasAvgDownL2
+avgDownL3 = condAvgDownL3 and not wasAvgDownL3
+avgDownL4 = condAvgDownL4 and not wasAvgDownL4
+
+if condAvgDownL2
+    wasAvgDownL2 := true
+else if close > stairLongL2 * 1.05
+    wasAvgDownL2 := false
+
+if condAvgDownL3
+    wasAvgDownL3 := true
+else if close > stairLongL3 * 1.05
+    wasAvgDownL3 := false
+
+if condAvgDownL4
+    wasAvgDownL4 := true
+else if close > stairLongL4 * 1.05
+    wasAvgDownL4 := false
+
+// 불타기
+pyramidLong = isUptrend and close > highest20[1] and isHighVolume and rsiValue < 75 and rsiValue > 50
+
+// 익절 조건
+condTpLong1 = rsiValue > 75 and close > bbUpper * 0.98
+condTpLong2 = rsiValue > 80 and close > bbUpper
+condTpLong3 = shortDeathCross and rsiValue > 60
+
+var bool wasTpLong1 = false
+var bool wasTpLong2 = false
+var bool wasTpLong3 = false
+
+tpLong1 = condTpLong1 and not wasTpLong1
+tpLong2 = condTpLong2 and not wasTpLong2
+tpLong3 = condTpLong3 and not wasTpLong3
+
+if condTpLong1
+    wasTpLong1 := true
+else if rsiValue < 60
+    wasTpLong1 := false
+
+if condTpLong2
+    wasTpLong2 := true
+else if rsiValue < 70
+    wasTpLong2 := false
+
+if condTpLong3
+    wasTpLong3 := true
+else if shortGoldenCross
+    wasTpLong3 := false
+
+// 손절
+condSlLong = deathCross or (close < ema200 * 0.92 and declineAccelerating)
+var bool wasSlLong = false
+slLong = condSlLong and not wasSlLong
+
+if condSlLong
+    wasSlLong := true
+else if goldenCross
+    wasSlLong := false
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 매매 신호 - SHORT
+// ══════════════════════════════════════════════════════════════════════════════
+
+showShort = tradeDirection == "Short Only" or tradeDirection == "Both"
+
+primaryShort = deathCross or (shortDeathCross and (isDowntrend or rsiValue > 65))
+
+pullbackShort = (isStrongPullbackShort or resistanceRejection or (isPullbackShort and rsiValue > 60)) and shortScore >= scoreThreshold
+
+addShort = isPullbackShort and shortScore >= 65 and not primaryShort and not pullbackShort
+
+// 물타기 숏 조건
+condAvgUpS2 = close >= stairShortL2 * 0.99 and close < stairShortL3
+condAvgUpS3 = close >= stairShortL3 * 0.99 and close < stairShortL4
+condAvgUpS4 = close >= stairShortL4 * 0.99
+
+var bool wasAvgUpS2 = false
+var bool wasAvgUpS3 = false
+var bool wasAvgUpS4 = false
+
+avgUpS2 = condAvgUpS2 and not wasAvgUpS2
+avgUpS3 = condAvgUpS3 and not wasAvgUpS3
+avgUpS4 = condAvgUpS4 and not wasAvgUpS4
+
+if condAvgUpS2
+    wasAvgUpS2 := true
+else if close < stairShortL2 * 0.95
+    wasAvgUpS2 := false
+
+if condAvgUpS3
+    wasAvgUpS3 := true
+else if close < stairShortL3 * 0.95
+    wasAvgUpS3 := false
+
+if condAvgUpS4
+    wasAvgUpS4 := true
+else if close < stairShortL4 * 0.95
+    wasAvgUpS4 := false
+
+// 불타기 숏
+pyramidShort = isDowntrend and close < lowest20[1] and isHighVolume and rsiValue > 25 and rsiValue < 50
+
+// 숏 익절
+condTpShort1 = rsiValue < 25 and close < bbLower * 1.02
+condTpShort2 = rsiValue < 20 and close < bbLower
+condTpShort3 = shortGoldenCross and rsiValue < 40
+
+var bool wasTpShort1 = false
+var bool wasTpShort2 = false
+var bool wasTpShort3 = false
+
+tpShort1 = condTpShort1 and not wasTpShort1
+tpShort2 = condTpShort2 and not wasTpShort2
+tpShort3 = condTpShort3 and not wasTpShort3
+
+if condTpShort1
+    wasTpShort1 := true
+else if rsiValue > 40
+    wasTpShort1 := false
+
+if condTpShort2
+    wasTpShort2 := true
+else if rsiValue > 30
+    wasTpShort2 := false
+
+if condTpShort3
+    wasTpShort3 := true
+else if shortDeathCross
+    wasTpShort3 := false
+
+// 숏 손절
+condSlShort = goldenCross or (close > ema200 * 1.08 and rallyAccelerating)
+var bool wasSlShort = false
+slShort = condSlShort and not wasSlShort
+
+if condSlShort
+    wasSlShort := true
+else if deathCross
+    wasSlShort := false
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 신호 중복 방지
+// ══════════════════════════════════════════════════════════════════════════════
+
+var int lastLongSignalBar = 0
+var int lastShortSignalBar = 0
+minBarsBetweenSignals = 3
+
+canShowLongSignal = bar_index - lastLongSignalBar >= minBarsBetweenSignals
+canShowShortSignal = bar_index - lastShortSignalBar >= minBarsBetweenSignals
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 시각화 (VISUALIZATION)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// EMA
+plot(showEMA ? ema20 : na, "EMA 20", color=emaFastColor, linewidth=emaFastWidth)
+plot(showEMA ? ema50 : na, "EMA 50", color=emaMidColor, linewidth=emaMidWidth)
+plot(showEMA ? ema200 : na, "EMA 200", color=emaSlowColor, linewidth=emaSlowWidth)
+
+// 볼린저밴드
+bbUpperPlot = plot(showBB ? bbUpper : na, "BB Upper", color=color.new(bbColor, 70))
+bbLowerPlot = plot(showBB ? bbLower : na, "BB Lower", color=color.new(bbColor, 70))
+fill(bbUpperPlot, bbLowerPlot, color=color.new(bbColor, 90))
+
+// 지지/저항 라인
+var line[] supportLines = array.new_line(0)
+var line[] resistanceLines = array.new_line(0)
+
+if showSR and barstate.islast
+    // 기존 라인 삭제
+    if array.size(supportLines) > 0
+        for i = 0 to array.size(supportLines) - 1
+            line.delete(array.get(supportLines, i))
+        array.clear(supportLines)
+
+    if array.size(resistanceLines) > 0
+        for i = 0 to array.size(resistanceLines) - 1
+            line.delete(array.get(resistanceLines, i))
+        array.clear(resistanceLines)
+
+    // 지지선 그리기
+    if array.size(supportLevels) > 0 and array.size(supportBars) > 0
+        int maxSup = math.min(array.size(supportLevels) - 1, 2)
+        for i = 0 to maxSup
+            level = array.get(supportLevels, i)
+            startBar = array.get(supportBars, i)
+            ln = line.new(startBar, level, bar_index + srExtend, level,
+                          color=color.new(color.green, 40), width=2, style=line.style_solid)
+            array.push(supportLines, ln)
+
+    // 저항선 그리기
+    if array.size(resistanceLevels) > 0 and array.size(resistanceBars) > 0
+        int maxRes = math.min(array.size(resistanceLevels) - 1, 2)
+        for i = 0 to maxRes
+            level = array.get(resistanceLevels, i)
+            startBar = array.get(resistanceBars, i)
+            ln = line.new(startBar, level, bar_index + srExtend, level,
+                          color=color.new(color.red, 40), width=2, style=line.style_solid)
+            array.push(resistanceLines, ln)
+
+// 계단식 레벨
+stairColorLong = color.new(color.teal, 70)
+stairColorShort = color.new(color.purple, 70)
+plot(not isUptrend and showLong ? stairLongL2 : na, "Long L2", color=stairColorLong, style=plot.style_linebr, linewidth=1)
+plot(not isUptrend and showLong ? stairLongL3 : na, "Long L3", color=stairColorLong, style=plot.style_linebr, linewidth=1)
+plot(not isDowntrend and showShort ? stairShortL2 : na, "Short L2", color=stairColorShort, style=plot.style_linebr, linewidth=1)
+plot(not isDowntrend and showShort ? stairShortL3 : na, "Short L3", color=stairColorShort, style=plot.style_linebr, linewidth=1)
+
+// 배경색
+bgcolor(isUptrend ? color.new(color.green, 95) : isDowntrend ? color.new(color.red, 95) : na)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 신호 라벨 - LONG
+// ══════════════════════════════════════════════════════════════════════════════
+
+if showLongSignals and showLong and canShowLongSignal
+    if primaryLong
+        label.new(bar_index, low, "🟢 LONG\n1차 진입\n" + str.tostring(longScore, "#") + "점",
+                  style=label.style_label_up, color=color.green, textcolor=color.white, size=size.normal)
+        lastLongSignalBar := bar_index
+
+    else if pullbackLong and not primaryLong
+        label.new(bar_index, low, "🔵 눌림목\nLONG\n" + str.tostring(longScore, "#") + "점",
+                  style=label.style_label_up, color=color.blue, textcolor=color.white, size=size.small)
+        lastLongSignalBar := bar_index
+
+    else if addLong
+        label.new(bar_index, low, "➕ 추가\nLONG",
+                  style=label.style_label_up, color=color.new(color.green, 30), textcolor=color.white, size=size.tiny)
+        lastLongSignalBar := bar_index
+
+if showLongSignals and showLong
+    if avgDownL2
+        label.new(bar_index, low, "🔷 물타기\nL2 (EMA200)",
+                  style=label.style_label_up, color=color.teal, textcolor=color.white, size=size.small)
+
+    if avgDownL3
+        label.new(bar_index, low, "🔷 물타기\nL3 (-5%)",
+                  style=label.style_label_up, color=color.teal, textcolor=color.white, size=size.small)
+
+    if avgDownL4
+        label.new(bar_index, low, "🔷 물타기\nL4 (-10%)",
+                  style=label.style_label_up, color=color.teal, textcolor=color.white, size=size.small)
+
+    if pyramidLong
+        label.new(bar_index, low, "🔥 불타기\nLONG",
+                  style=label.style_label_up, color=color.orange, textcolor=color.white, size=size.small)
+
+    if tpLong1
+        label.new(bar_index, high, "💰 익절1",
+                  style=label.style_label_down, color=color.teal, textcolor=color.white, size=size.tiny)
+
+    if tpLong2
+        label.new(bar_index, high, "💰 익절2",
+                  style=label.style_label_down, color=color.teal, textcolor=color.white, size=size.small)
+
+    if tpLong3
+        label.new(bar_index, high, "⚠️ 익절3",
+                  style=label.style_label_down, color=color.orange, textcolor=color.white, size=size.small)
+
+    if slLong
+        label.new(bar_index, high, "🔴 손절\nLONG",
+                  style=label.style_label_down, color=color.red, textcolor=color.white, size=size.normal)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 신호 라벨 - SHORT
+// ══════════════════════════════════════════════════════════════════════════════
+
+if showShortSignals and showShort and canShowShortSignal
+    if primaryShort
+        label.new(bar_index, high, "🔴 SHORT\n1차 진입\n" + str.tostring(shortScore, "#") + "점",
+                  style=label.style_label_down, color=color.red, textcolor=color.white, size=size.normal)
+        lastShortSignalBar := bar_index
+
+    else if pullbackShort and not primaryShort
+        label.new(bar_index, high, "🟣 되돌림\nSHORT\n" + str.tostring(shortScore, "#") + "점",
+                  style=label.style_label_down, color=color.purple, textcolor=color.white, size=size.small)
+        lastShortSignalBar := bar_index
+
+    else if addShort
+        label.new(bar_index, high, "➖ 추가\nSHORT",
+                  style=label.style_label_down, color=color.new(color.red, 30), textcolor=color.white, size=size.tiny)
+        lastShortSignalBar := bar_index
+
+if showShortSignals and showShort
+    if avgUpS2
+        label.new(bar_index, high, "🟣 물타기\nS2 (EMA200)",
+                  style=label.style_label_down, color=color.purple, textcolor=color.white, size=size.small)
+
+    if avgUpS3
+        label.new(bar_index, high, "🟣 물타기\nS3 (+5%)",
+                  style=label.style_label_down, color=color.purple, textcolor=color.white, size=size.small)
+
+    if avgUpS4
+        label.new(bar_index, high, "🟣 물타기\nS4 (+10%)",
+                  style=label.style_label_down, color=color.purple, textcolor=color.white, size=size.small)
+
+    if pyramidShort
+        label.new(bar_index, high, "🔥 불타기\nSHORT",
+                  style=label.style_label_down, color=color.maroon, textcolor=color.white, size=size.small)
+
+    if tpShort1
+        label.new(bar_index, low, "💰 익절1",
+                  style=label.style_label_up, color=color.purple, textcolor=color.white, size=size.tiny)
+
+    if tpShort2
+        label.new(bar_index, low, "💰 익절2",
+                  style=label.style_label_up, color=color.purple, textcolor=color.white, size=size.small)
+
+    if tpShort3
+        label.new(bar_index, low, "⚠️ 익절3",
+                  style=label.style_label_up, color=color.orange, textcolor=color.white, size=size.small)
+
+    if slShort
+        label.new(bar_index, low, "🟢 손절\nSHORT",
+                  style=label.style_label_up, color=color.green, textcolor=color.white, size=size.normal)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 다이버전스 라벨
+// ══════════════════════════════════════════════════════════════════════════════
+
+if showDivergence
+    if bullishDivergence
+        label.new(bar_index - 5, low[5], "📈 불리시\n다이버전스",
+                  style=label.style_label_up, color=color.new(color.green, 20), textcolor=color.white, size=size.tiny)
+
+    if bearishDivergence
+        label.new(bar_index - 5, high[5], "📉 베어리시\n다이버전스",
+                  style=label.style_label_down, color=color.new(color.red, 20), textcolor=color.white, size=size.tiny)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 점수판 테이블 (SCORE TABLE)
+// ══════════════════════════════════════════════════════════════════════════════
+
+if showScoreTable
+    var table scoreTable = table.new(position.top_right, 3, 13,
+                                      bgcolor=color.new(color.black, 20),
+                                      border_width=1,
+                                      border_color=color.gray)
+
+    table.cell(scoreTable, 0, 0, "", text_color=color.white, text_size=size.small)
+    table.cell(scoreTable, 1, 0, "LONG", text_color=color.green, text_size=size.small)
+    table.cell(scoreTable, 2, 0, "SHORT", text_color=color.red, text_size=size.small)
+
+    longScoreColor = longScore >= 70 ? color.green : longScore >= 50 ? color.yellow : color.red
+    shortScoreColor = shortScore >= 70 ? color.red : shortScore >= 50 ? color.yellow : color.green
+
+    table.cell(scoreTable, 0, 1, "점수", text_color=color.white, text_size=size.small)
+    table.cell(scoreTable, 1, 1, str.tostring(longScore, "#"), text_color=longScoreColor, text_size=size.normal)
+    table.cell(scoreTable, 2, 1, str.tostring(shortScore, "#"), text_color=shortScoreColor, text_size=size.normal)
+
+    table.cell(scoreTable, 0, 2, "등급", text_color=color.white, text_size=size.small)
+    table.cell(scoreTable, 1, 2, longGrade, text_color=longScoreColor, text_size=size.small)
+    table.cell(scoreTable, 2, 2, shortGrade, text_color=shortScoreColor, text_size=size.small)
+
+    trendColor = isUptrend ? color.green : isDowntrend ? color.red : color.yellow
+    trendText = isUptrend ? "▲ 상승" : isDowntrend ? "▼ 하락" : "◆ 횡보"
+    table.cell(scoreTable, 0, 3, "현재TF", text_color=color.white, text_size=size.small)
+    table.cell(scoreTable, 1, 3, trendText, text_color=trendColor, text_size=size.small)
+    table.cell(scoreTable, 2, 3, "", text_color=color.white, text_size=size.small)
+
+    if showMTF
+        table.cell(scoreTable, 0, 4, "━ MTF ━", text_color=color.gray, text_size=size.tiny)
+        table.cell(scoreTable, 1, 4, "━━━━", text_color=color.gray, text_size=size.tiny)
+        table.cell(scoreTable, 2, 4, "━━━━", text_color=color.gray, text_size=size.tiny)
+
+        trend4HColor = trend_4H == 1 ? color.green : trend_4H == -1 ? color.red : color.yellow
+        trend4HText = trend_4H == 1 ? "▲" : trend_4H == -1 ? "▼" : "◆"
+        table.cell(scoreTable, 0, 5, "4H", text_color=color.white, text_size=size.small)
+        table.cell(scoreTable, 1, 5, trend4HText, text_color=trend4HColor, text_size=size.small)
+        table.cell(scoreTable, 2, 5, str.tostring(rsi_4H, "#"), text_color=color.white, text_size=size.tiny)
+
+        trendDColor = trend_D == 1 ? color.green : trend_D == -1 ? color.red : color.yellow
+        trendDText = trend_D == 1 ? "▲" : trend_D == -1 ? "▼" : "◆"
+        table.cell(scoreTable, 0, 6, "일봉", text_color=color.white, text_size=size.small)
+        table.cell(scoreTable, 1, 6, trendDText, text_color=trendDColor, text_size=size.small)
+        table.cell(scoreTable, 2, 6, str.tostring(rsi_D, "#"), text_color=color.white, text_size=size.tiny)
+
+        trendWColor = trend_W == 1 ? color.green : trend_W == -1 ? color.red : color.yellow
+        trendWText = trend_W == 1 ? "▲" : trend_W == -1 ? "▼" : "◆"
+        table.cell(scoreTable, 0, 7, "주봉", text_color=color.white, text_size=size.small)
+        table.cell(scoreTable, 1, 7, trendWText, text_color=trendWColor, text_size=size.small)
+        table.cell(scoreTable, 2, 7, str.tostring(rsi_W, "#"), text_color=color.white, text_size=size.tiny)
+
+        mtfColor = mtfScore >= 2 ? color.green : mtfScore <= -2 ? color.red : color.yellow
+        mtfText = mtfScore >= 2 ? "강세" : mtfScore <= -2 ? "약세" : "중립"
+        mtfScoreText = mtfScore > 0 ? "+" + str.tostring(mtfScore) : str.tostring(mtfScore)
+        table.cell(scoreTable, 0, 8, "MTF", text_color=color.white, text_size=size.small)
+        table.cell(scoreTable, 1, 8, mtfText, text_color=mtfColor, text_size=size.small)
+        table.cell(scoreTable, 2, 8, mtfScoreText, text_color=mtfColor, text_size=size.small)
+
+    table.cell(scoreTable, 0, 9, "━━━━━", text_color=color.gray, text_size=size.tiny)
+    table.cell(scoreTable, 1, 9, "━━━━", text_color=color.gray, text_size=size.tiny)
+    table.cell(scoreTable, 2, 9, "━━━━", text_color=color.gray, text_size=size.tiny)
+
+    rsiColor = rsiValue < rsiOversold ? color.green : rsiValue > rsiOverbought ? color.red : color.yellow
+    table.cell(scoreTable, 0, 10, "RSI", text_color=color.white, text_size=size.small)
+    table.cell(scoreTable, 1, 10, str.tostring(rsiValue, "#.#"), text_color=rsiColor, text_size=size.small)
+    bbPosText = bbPosition < 0.2 ? "하단" : bbPosition > 0.8 ? "상단" : "중간"
+    table.cell(scoreTable, 2, 10, bbPosText, text_color=color.white, text_size=size.tiny)
+
+    table.cell(scoreTable, 0, 11, "S/R", text_color=color.white, text_size=size.small)
+    supText = not na(nearestSupport) ? str.tostring(supportProximity, "#.#") + "%" : "-"
+    resText = not na(nearestResistance) ? str.tostring(resistanceProximity, "#.#") + "%" : "-"
+    table.cell(scoreTable, 1, 11, "S:" + supText, text_color=color.green, text_size=size.tiny)
+    table.cell(scoreTable, 2, 11, "R:" + resText, text_color=color.red, text_size=size.tiny)
+
+    statusText = isPullbackLong ? "📘 눌림목" :
+                 isPullbackShort ? "📕 되돌림" :
+                 bullishDivergence ? "📈 불리시" :
+                 bearishDivergence ? "📉 베어리시" :
+                 declineAccelerating ? "⚠️ 급락" :
+                 rallyAccelerating ? "⚠️ 급등" :
+                 isUptrend ? "✅ 상승" :
+                 isDowntrend ? "🔻 하락" : "➖ 횡보"
+    table.cell(scoreTable, 0, 12, "상태", text_color=color.white, text_size=size.small)
+    table.cell(scoreTable, 1, 12, statusText, text_color=color.white, text_size=size.small)
+    table.cell(scoreTable, 2, 12, "", text_color=color.white, text_size=size.small)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ 알림 (ALERTS)
+// ══════════════════════════════════════════════════════════════════════════════
+
+alertcondition(primaryLong, title="LONG 1차 진입", message="{{ticker}}: LONG 1차 진입!")
+alertcondition(pullbackLong, title="LONG 눌림목", message="{{ticker}}: 눌림목 LONG!")
+alertcondition(pyramidLong, title="LONG 불타기", message="{{ticker}}: LONG 불타기!")
+alertcondition(avgDownL2 or avgDownL3 or avgDownL4, title="LONG 물타기", message="{{ticker}}: LONG 물타기 구간")
+alertcondition(slLong, title="LONG 손절", message="{{ticker}}: LONG 손절!")
+
+alertcondition(primaryShort, title="SHORT 1차 진입", message="{{ticker}}: SHORT 1차 진입!")
+alertcondition(pullbackShort, title="SHORT 되돌림", message="{{ticker}}: 되돌림 SHORT!")
+alertcondition(pyramidShort, title="SHORT 불타기", message="{{ticker}}: SHORT 불타기!")
+alertcondition(avgUpS2 or avgUpS3 or avgUpS4, title="SHORT 물타기", message="{{ticker}}: SHORT 물타기 구간")
+alertcondition(slShort, title="SHORT 손절", message="{{ticker}}: SHORT 손절!")
+
+alertcondition(bullishDivergence, title="불리시 다이버전스", message="{{ticker}}: 불리시 다이버전스 감지!")
+alertcondition(bearishDivergence, title="베어리시 다이버전스", message="{{ticker}}: 베어리시 다이버전스 감지!")
+alertcondition(longScore >= 80, title="LONG A+ 기회", message="{{ticker}}: LONG 점수 80점 이상!")
+alertcondition(shortScore >= 80, title="SHORT A+ 기회", message="{{ticker}}: SHORT 점수 80점 이상!")
+
+plot(longScore, "Long Score", display=display.status_line, color=color.green)
+plot(shortScore, "Short Score", display=display.status_line, color=color.red)
+plot(mtfScore, "MTF Score", display=display.status_line, color=color.blue)
