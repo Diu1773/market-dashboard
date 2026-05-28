@@ -10,8 +10,51 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import requests
 import streamlit as st
 import yfinance as yf
+
+# ---------- Thematic ETF universe ----------
+THEMES: dict[str, list[tuple[str, str]]] = {
+    "🤖 AI / 반도체": [
+        ("SMH", "반도체"), ("SOXX", "반도체"), ("AIQ", "AI 종합"),
+        ("CHAT", "생성형 AI"), ("BOTZ", "AI/로봇"),
+    ],
+    "🦾 로봇 / 피지컬 AI": [
+        ("BOTZ", "로봇·AI"), ("ROBO", "로보틱스"), ("ARKQ", "자율기술"),
+        ("IRBO", "AI·로봇"),
+    ],
+    "🧬 바이오 / 바이오AI": [
+        ("IBB", "바이오테크"), ("XBI", "바이오 SMID"),
+        ("ARKG", "유전체혁명"), ("IDNA", "유전체"),
+    ],
+    "🚀 우주 / UAM / 항공": [
+        ("ARKX", "우주탐사"), ("UFO", "우주산업"),
+        ("ITA", "방산·항공"), ("PPA", "방산·항공"),
+    ],
+    "🛰️ 드론 / 방산": [
+        ("ITA", "방산"), ("PPA", "방산"), ("XAR", "방산"),
+    ],
+    "⚡ 원자력 / 클린에너지": [
+        ("URA", "우라늄"), ("NLR", "원자력"),
+        ("ICLN", "클린에너지"), ("TAN", "태양광"),
+    ],
+    "🔋 EV / 자율주행 / 배터리": [
+        ("DRIV", "자율주행"), ("LIT", "배터리·리튬"), ("IDRV", "EV"),
+    ],
+    "🛡️ 사이버보안": [
+        ("CIBR", "사이버보안"), ("HACK", "사이버보안"),
+    ],
+    "💰 핀테크 / 크립토": [
+        ("ARKF", "핀테크"), ("IBIT", "비트코인 ETF"), ("BITQ", "크립토 산업"),
+    ],
+    "⚛️ 양자컴퓨팅 / 신기술": [
+        ("QTUM", "양자·신기술"), ("ARKK", "혁신성장"), ("ARKW", "차세대 인터넷"),
+    ],
+    "🏗️ 인프라 / 리쇼어링": [
+        ("PAVE", "미국 인프라"), ("SLX", "철강"),
+    ],
+}
 
 st.set_page_config(page_title="Market Dashboard", layout="wide", page_icon="📊")
 
@@ -61,6 +104,45 @@ def pct_rank(series: pd.Series, value: float, lookback: int = 252) -> float:
     if len(s) < 20:
         return 50.0
     return float((s < value).mean() * 100)
+
+
+# ---------- Groq LLM ----------
+def _get_groq_key() -> str | None:
+    try:
+        return st.secrets["GROQ_API_KEY"]
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=60 * 10, show_spinner=False)
+def call_groq(prompt: str, model: str = "llama-3.3-70b-versatile") -> str:
+    """Groq 무료 API 호출. 10분 캐시."""
+    key = _get_groq_key()
+    if not key:
+        return "⚠️ Groq API 키 미설정 — Streamlit Cloud Settings → Secrets 에 `GROQ_API_KEY=...` 추가하세요. (https://console.groq.com/keys 에서 무료 발급)"
+    try:
+        r = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {key}"},
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": (
+                        "당신은 한국어로 답변하는 미국 시장 전문 거시·테마 분석가입니다. "
+                        "주식 일/주봉 스윙 트레이더에게 도움이 되도록 간결하고 실용적으로 답하세요. "
+                        "추측보다 데이터에 근거해서 말하고, 불확실하면 그렇다고 명시하세요."
+                    )},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.4,
+                "max_tokens": 1200,
+            },
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"]
+    except Exception as e:
+        return f"❌ Groq 호출 실패: {e}"
 
 
 # ---------- Sentiment score ----------
@@ -151,8 +233,8 @@ st.caption(
     "yfinance 자체 지연 ~15분"
 )
 
-tab_sentiment, tab_macro, tab_watchlist = st.tabs(
-    ["🧠 시장 심리", "🌐 매크로", "👀 관심종목"]
+tab_ai, tab_sentiment, tab_macro, tab_themes, tab_watchlist = st.tabs(
+    ["🤖 AI 해석", "🧠 시장 심리", "🌐 매크로", "🚀 테마", "👀 관심종목"]
 )
 
 # ===== Sentiment tab =====
@@ -243,6 +325,191 @@ with tab_macro:
     fig.update_layout(height=420, margin=dict(l=20, r=60, t=20, b=20),
                       xaxis_title="6개월 수익률 (%)")
     st.plotly_chart(fig, use_container_width=True)
+
+
+# ---------- Theme performance helpers ----------
+def _all_theme_tickers() -> tuple[str, ...]:
+    seen = []
+    for items in THEMES.values():
+        for t, _ in items:
+            if t not in seen:
+                seen.append(t)
+    return tuple(seen)
+
+
+def compute_theme_perf(period: str = "3mo") -> pd.DataFrame:
+    """각 ETF의 1m / 3m / YTD 수익률을 반환."""
+    df = fetch_macro(_all_theme_tickers(), period="ytd")
+    df3 = fetch_macro(_all_theme_tickers(), period=period)
+    rows = []
+    for theme, items in THEMES.items():
+        for t, desc in items:
+            if t not in df.columns:
+                continue
+            s = df[t].dropna()
+            s3 = df3[t].dropna() if t in df3.columns else s
+            if len(s) < 21:
+                continue
+            rows.append({
+                "테마": theme,
+                "티커": t,
+                "설명": desc,
+                "현재가": float(s.iloc[-1]),
+                "1개월": float(s.pct_change(21).iloc[-1] * 100),
+                "3개월": float(s3.iloc[-1] / s3.iloc[0] - 1) * 100 if len(s3) > 5 else np.nan,
+                "YTD": float(s.iloc[-1] / s.iloc[0] - 1) * 100,
+            })
+    return pd.DataFrame(rows)
+
+
+# ===== Themes tab =====
+with tab_themes:
+    st.subheader("테마별 ETF 성과")
+    st.caption("미국 상장 ETF · 1개월 / 3개월 / YTD 수익률")
+
+    with st.spinner("테마 데이터 로딩중..."):
+        tdf = compute_theme_perf()
+
+    if tdf.empty:
+        st.warning("데이터를 불러올 수 없습니다.")
+    else:
+        # 테마 평균으로 상위 테마 랭킹
+        theme_avg = tdf.groupby("테마")["1개월"].mean().sort_values(ascending=True)
+        fig_t = go.Figure(go.Bar(
+            x=theme_avg.values,
+            y=theme_avg.index,
+            orientation="h",
+            marker_color=["#2e7d32" if v > 0 else "#c62828" for v in theme_avg.values],
+            text=[f"{v:+.1f}%" for v in theme_avg.values],
+            textposition="outside",
+        ))
+        fig_t.update_layout(
+            height=420, margin=dict(l=20, r=60, t=20, b=20),
+            xaxis_title="1개월 평균 수익률 (%)",
+            title="🏆 테마 랭킹 (자금 흐름)",
+        )
+        st.plotly_chart(fig_t, use_container_width=True)
+
+        # 개별 ETF 표 (정렬 가능)
+        st.subheader("개별 ETF 상세")
+        display = tdf.copy()
+        for col in ["현재가", "1개월", "3개월", "YTD"]:
+            display[col] = display[col].round(2)
+        st.dataframe(
+            display.sort_values("1개월", ascending=False),
+            use_container_width=True, hide_index=True,
+            column_config={
+                "1개월": st.column_config.NumberColumn(format="%.1f%%"),
+                "3개월": st.column_config.NumberColumn(format="%.1f%%"),
+                "YTD": st.column_config.NumberColumn(format="%.1f%%"),
+                "현재가": st.column_config.NumberColumn(format="$%.2f"),
+            },
+        )
+
+
+# ===== AI Interpretation tab =====
+with tab_ai:
+    st.subheader("🤖 AI 시장 진단")
+    st.caption("Groq Llama 3.3 70B · 모든 지표를 종합해 한국어로 해석 · 10분 캐시")
+
+    has_key = _get_groq_key() is not None
+    if not has_key:
+        st.warning(
+            "**Groq API 키 미설정**  \n"
+            "1. https://console.groq.com/keys 에서 무료 발급 (가입 30초)  \n"
+            "2. Streamlit Cloud → 앱 → ⋮ → Settings → Secrets 에 추가:\n"
+            "    ```\n    GROQ_API_KEY = \"gsk_xxxxx\"\n    ```\n"
+            "3. 저장하면 자동 재시작 → 이 탭에서 해석 표시"
+        )
+
+    if st.button("🔮 지금 해석 생성", type="primary", disabled=not has_key):
+        with st.spinner("데이터 수집 + LLM 분석중..."):
+            # 스냅샷 데이터 수집
+            score, comps = compute_sentiment()
+            tdf = compute_theme_perf()
+
+            # 섹터 성과
+            sectors = {
+                "XLK": "기술", "XLY": "임의소비재", "XLC": "통신",
+                "XLF": "금융", "XLI": "산업", "XLE": "에너지",
+                "XLB": "소재", "XLV": "헬스케어", "XLP": "필수소비재",
+                "XLU": "유틸리티", "XLRE": "리츠",
+            }
+            sec_df = fetch_macro(tuple(sectors.keys()), period="3mo")
+            sec_perf = ((sec_df.iloc[-1] / sec_df.iloc[0] - 1) * 100).sort_values(ascending=False)
+
+            # 매크로 스냅
+            macro_df = fetch_macro(("^VIX", "UUP", "^TNX", "GLD", "USO", "TLT"), period="3mo")
+            macro_snap = {
+                t: {
+                    "현재": float(macro_df[t].dropna().iloc[-1]),
+                    "20일변동%": float(macro_df[t].pct_change(20).dropna().iloc[-1] * 100),
+                }
+                for t in macro_df.columns
+            }
+
+            # 테마 랭킹
+            theme_avg = tdf.groupby("테마")["1개월"].mean().sort_values(ascending=False)
+            top_themes = theme_avg.head(5).to_dict()
+            bot_themes = theme_avg.tail(3).to_dict()
+
+            # ETF 단위 핫/콜드
+            top_etfs = tdf.nlargest(8, "1개월")[["티커", "설명", "1개월"]].to_dict("records")
+            bot_etfs = tdf.nsmallest(5, "1개월")[["티커", "설명", "1개월"]].to_dict("records")
+
+            prompt = f"""아래는 오늘({dt.date.today()}) 미국 시장 스냅샷이다.
+
+# 종합 Fear/Greed: {score:.0f}/100
+구성요소:
+{chr(10).join(f"- {c.name}: 점수 {c.score:.0f}, 값 {c.value:.2f} ({c.note})" for c in comps)}
+
+# 매크로 (현재값, 20일 변동률)
+{chr(10).join(f"- {k}: {v['현재']:.2f}, {v['20일변동%']:+.1f}%" for k, v in macro_snap.items())}
+
+# 섹터 ETF 3개월 성과 (강→약)
+{chr(10).join(f"- {sectors.get(t,t)} ({t}): {v:+.1f}%" for t, v in sec_perf.items())}
+
+# 테마 1개월 평균 (상위 5)
+{chr(10).join(f"- {k}: {v:+.1f}%" for k, v in top_themes.items())}
+
+# 테마 1개월 평균 (하위 3)
+{chr(10).join(f"- {k}: {v:+.1f}%" for k, v in bot_themes.items())}
+
+# 1개월 핫 ETF
+{chr(10).join(f"- {e['티커']} ({e['설명']}): {e['1개월']:+.1f}%" for e in top_etfs)}
+
+# 1개월 콜드 ETF
+{chr(10).join(f"- {e['티커']} ({e['설명']}): {e['1개월']:+.1f}%" for e in bot_etfs)}
+
+다음 5개 섹션으로 답변하라 (각 섹션 헤더는 ## 로 시작):
+
+## 한 줄 요약
+오늘 시장 분위기를 한 문장으로.
+
+## 시장 심리 진단
+Fear/Greed 점수와 구성요소들을 보고 지금 시장이 어떤 국면인지. 어떤 컴포넌트가 끌어내리거나 끌어올리고 있는지 구체적으로.
+
+## 매크로 환경
+VIX/달러/금리/금/원유 흐름이 위험자산에 우호적인지 적대적인지. 특히 주목할 변화.
+
+## 자금 흐름 / 핫한 테마
+어떤 섹터·테마로 돈이 들어오고 빠지는지. 그 이유에 대한 가설(실적 시즌, 정책, 금리 등 추정).
+
+## 스윙 트레이더 액션
+일/주봉 스윙하는 한국 투자자 입장에서 (1) 지금 신규 진입을 적극적으로 늘릴 환경인지 (2) 우선 볼 만한 테마/섹터 2~3개 (3) 피해야 할 영역. 단정하지 말고 근거와 함께.
+
+답변은 한국어. 마크다운 사용. 과한 디스클레이머 없이 명확하게."""
+
+            answer = call_groq(prompt)
+            st.session_state["last_ai_answer"] = answer
+            st.session_state["last_ai_time"] = dt.datetime.now()
+
+    if "last_ai_answer" in st.session_state:
+        st.caption(f"생성 시각: {st.session_state['last_ai_time']:%Y-%m-%d %H:%M:%S}")
+        st.markdown(st.session_state["last_ai_answer"])
+    elif has_key:
+        st.info("👆 '지금 해석 생성' 버튼을 눌러 AI 진단을 받아보세요.")
+
 
 # ===== Watchlist tab =====
 WATCHLIST = [
