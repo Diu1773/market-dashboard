@@ -137,7 +137,7 @@ hcol1, hcol2, hcol3, hcol4 = st.columns([2, 2, 2, 2])
 try:
     vix_last, vix_chg, vix_ts = fetch_vix_quote()
     hcol1.metric("VIX (실시간 ~15분 지연)", f"{vix_last:.2f}", f"{vix_chg:+.2f}%")
-    hcol2.caption(f"퀘크 조회: {vix_ts}")
+    hcol2.caption(f"퀵 조회: {vix_ts}")
 except Exception as e:
     hcol1.error(f"VIX 조회 실패: {e}")
 
