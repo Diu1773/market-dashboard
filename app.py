@@ -16,12 +16,43 @@ import yfinance as yf
 st.set_page_config(page_title="Market Dashboard", layout="wide", page_icon="📊")
 
 # ---------- Data fetch ----------
-@st.cache_data(ttl=60 * 30)
-def fetch(tickers: list[str], period: str = "2y") -> pd.DataFrame:
-    df = yf.download(tickers, period=period, auto_adjust=True, progress=False)
+# 탭별로 갱신 주기를 다르게: 시장심리(1분) / 매크로(5분) / 관심종목(15분)
+def _fetch_impl(tickers: tuple[str, ...], period: str) -> pd.DataFrame:
+    df = yf.download(list(tickers), period=period, auto_adjust=True, progress=False)
     if isinstance(df.columns, pd.MultiIndex):
         df = df["Close"]
     return df.dropna(how="all")
+
+
+@st.cache_data(ttl=60)  # 1분
+def fetch_fast(tickers: tuple[str, ...], period: str = "2y") -> pd.DataFrame:
+    return _fetch_impl(tickers, period)
+
+
+@st.cache_data(ttl=60 * 5)  # 5분
+def fetch_macro(tickers: tuple[str, ...], period: str = "1y") -> pd.DataFrame:
+    return _fetch_impl(tickers, period)
+
+
+@st.cache_data(ttl=60 * 15)  # 15분
+def fetch_slow(tickers: tuple[str, ...], period: str = "1y") -> pd.DataFrame:
+    return _fetch_impl(tickers, period)
+
+
+@st.cache_data(ttl=30)  # 30초 — VIX 단독 빠른 조회
+def fetch_vix_quote() -> tuple[float, float, str]:
+    """현재 VIX와 전일대비. yfinance Ticker.info / fast_info 사용."""
+    t = yf.Ticker("^VIX")
+    try:
+        fi = t.fast_info
+        last = float(fi["last_price"])
+        prev = float(fi["previous_close"])
+    except Exception:
+        hist = t.history(period="5d")
+        last = float(hist["Close"].iloc[-1])
+        prev = float(hist["Close"].iloc[-2])
+    chg = (last / prev - 1) * 100
+    return last, chg, dt.datetime.now().strftime("%H:%M:%S")
 
 
 def pct_rank(series: pd.Series, value: float, lookback: int = 252) -> float:
@@ -43,7 +74,7 @@ class Component:
 
 def compute_sentiment() -> tuple[float, list[Component]]:
     tickers = ["^VIX", "SPY", "QQQ", "TLT", "HYG", "LQD", "GLD", "UUP", "^TNX"]
-    df = fetch(tickers)
+    df = fetch_fast(tuple(tickers))
 
     comps: list[Component] = []
 
@@ -100,7 +131,25 @@ def compute_sentiment() -> tuple[float, list[Component]]:
 
 # ---------- UI ----------
 st.title("📊 Market Dashboard")
-st.caption(f"마지막 업데이트: {dt.datetime.now():%Y-%m-%d %H:%M} · 데이터 캐시 30분")
+
+# 상단 실시간 VIX 헤더 + 수동 새로고침
+hcol1, hcol2, hcol3, hcol4 = st.columns([2, 2, 2, 2])
+try:
+    vix_last, vix_chg, vix_ts = fetch_vix_quote()
+    hcol1.metric("VIX (실시간 ~15분 지연)", f"{vix_last:.2f}", f"{vix_chg:+.2f}%")
+    hcol2.caption(f"퀘크 조회: {vix_ts}")
+except Exception as e:
+    hcol1.error(f"VIX 조회 실패: {e}")
+
+if hcol4.button("🔄 강제 새로고침", help="모든 캐시를 비우고 다시 받음"):
+    st.cache_data.clear()
+    st.rerun()
+
+st.caption(
+    f"페이지 로드: {dt.datetime.now():%Y-%m-%d %H:%M:%S} · "
+    "캐시 — 시장심리 1분 / 매크로 5분 / 관심종목 15분 · "
+    "yfinance 자체 지연 ~15분"
+)
 
 tab_sentiment, tab_macro, tab_watchlist = st.tabs(
     ["🧠 시장 심리", "🌐 매크로", "👀 관심종목"]
@@ -163,7 +212,7 @@ with tab_macro:
         "USO": "원유 (USO)",
         "TLT": "장기국채 (TLT)",
     }
-    macro_df = fetch(list(macro_tickers.keys()), period="1y")
+    macro_df = fetch_macro(tuple(macro_tickers.keys()), period="1y")
     cols = st.columns(3)
     for i, (t, name) in enumerate(macro_tickers.items()):
         if t not in macro_df.columns:
@@ -181,7 +230,7 @@ with tab_macro:
         "XLB": "소재", "XLV": "헬스케어", "XLP": "필수소비재",
         "XLU": "유틸리티", "XLRE": "리츠",
     }
-    sec_df = fetch(list(sectors.keys()), period="6mo")
+    sec_df = fetch_macro(tuple(sectors.keys()), period="6mo")
     rets = (sec_df.iloc[-1] / sec_df.iloc[0] - 1).sort_values(ascending=True) * 100
     fig = go.Figure(go.Bar(
         x=rets.values,
@@ -209,7 +258,7 @@ with tab_watchlist:
     tickers = [t.strip().upper() for t in user_list.split(",") if t.strip()]
 
     if tickers:
-        wdf = fetch(tickers, period="1y")
+        wdf = fetch_slow(tuple(tickers), period="1y")
         rows = []
         for t in tickers:
             if t not in wdf.columns:
