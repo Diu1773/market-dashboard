@@ -233,8 +233,8 @@ st.caption(
     "yfinance 자체 지연 ~15분"
 )
 
-tab_ai, tab_sentiment, tab_macro, tab_themes, tab_watchlist = st.tabs(
-    ["🤖 AI 해석", "🧠 시장 심리", "🌐 매크로", "🚀 테마", "👀 관심종목"]
+tab_ai, tab_sentiment, tab_macro, tab_themes, tab_watchlist, tab_stock = st.tabs(
+    ["🤖 AI 해석", "🧠 시장 심리", "🌐 매크로", "🚀 테마", "👀 관심종목", "🔬 종목 분석"]
 )
 
 # ===== Sentiment tab =====
@@ -511,55 +511,502 @@ VIX/달러/금리/금/원유 흐름이 위험자산에 우호적인지 적대적
         st.info("👆 '지금 해석 생성' 버튼을 눌러 AI 진단을 받아보세요.")
 
 
-# ===== Watchlist tab =====
-WATCHLIST = [
-    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA",
-    "AVGO", "AMD", "TSM", "ASML", "NFLX", "PLTR",
+# ---------- Indicator & scoring engine ----------
+DEFAULT_WATCHLIST = [
+    "RKLB", "PL", "ASTS", "JOBY", "SERV",
+    "NVDA", "PLTR", "AMD", "AVGO", "TSM",
 ]
 
-with tab_watchlist:
-    st.subheader("관심종목 시그널")
-    st.caption("조건: 20MA > 60MA(상승추세) · 현재가가 20MA 근처(±3%) · RSI 30~50")
 
-    user_list = st.text_input("티커 (쉼표로 구분)", value=",".join(WATCHLIST))
-    tickers = [t.strip().upper() for t in user_list.split(",") if t.strip()]
+@st.cache_data(ttl=60 * 15, show_spinner=False)
+def fetch_ohlc(ticker: str, period: str = "1y") -> pd.DataFrame:
+    """단일 종목 OHLCV. 캔들차트/지표용."""
+    df = yf.download(ticker, period=period, auto_adjust=True, progress=False)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    return df.dropna()
+
+
+def compute_indicators(close: pd.Series, vol: pd.Series | None = None) -> dict:
+    """다중 지표 한 번에 계산."""
+    c = close.dropna()
+    out: dict = {}
+    if len(c) < 60:
+        return out
+
+    ma10 = c.rolling(10).mean()
+    ma20 = c.rolling(20).mean()
+    ma50 = c.rolling(50).mean()
+    ma60 = c.rolling(60).mean()
+    ma200 = c.rolling(200).mean() if len(c) >= 200 else pd.Series(index=c.index, dtype=float)
+
+    # RSI(14)
+    delta = c.diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    rs = gain / loss.replace(0, np.nan)
+    rsi = 100 - (100 / (1 + rs))
+
+    # MACD(12,26,9)
+    ema12 = c.ewm(span=12, adjust=False).mean()
+    ema26 = c.ewm(span=26, adjust=False).mean()
+    macd = ema12 - ema26
+    macd_sig = macd.ewm(span=9, adjust=False).mean()
+    macd_hist = macd - macd_sig
+
+    # Bollinger(20,2)
+    bb_mid = ma20
+    bb_std = c.rolling(20).std()
+    bb_up = bb_mid + 2 * bb_std
+    bb_low = bb_mid - 2 * bb_std
+    bb_pct = (c - bb_low) / (bb_up - bb_low)  # 0=하단, 1=상단
+
+    # ATR(14) 근사 (종가 기준)
+    atr = c.diff().abs().rolling(14).mean()
+
+    price = float(c.iloc[-1])
+    out.update({
+        "price": price,
+        "ma10": float(ma10.iloc[-1]),
+        "ma20": float(ma20.iloc[-1]),
+        "ma50": float(ma50.iloc[-1]),
+        "ma60": float(ma60.iloc[-1]),
+        "ma200": float(ma200.iloc[-1]) if ma200.notna().any() else np.nan,
+        "dist20": (price / ma20.iloc[-1] - 1) * 100,
+        "dist50": (price / ma50.iloc[-1] - 1) * 100,
+        "rsi": float(rsi.iloc[-1]),
+        "rsi_prev": float(rsi.iloc[-2]),
+        "macd_hist": float(macd_hist.iloc[-1]),
+        "macd_hist_prev": float(macd_hist.iloc[-2]),
+        "macd_cross_up": bool(macd.iloc[-2] <= macd_sig.iloc[-2] and macd.iloc[-1] > macd_sig.iloc[-1]),
+        "bb_pct": float(bb_pct.iloc[-1]),
+        "atr_pct": float(atr.iloc[-1] / price * 100),
+        "trend_up": bool(ma20.iloc[-1] > ma60.iloc[-1]),
+        "above_200": bool(price > ma200.iloc[-1]) if ma200.notna().any() else None,
+        "ret_5d": float(c.pct_change(5).iloc[-1] * 100),
+        "ret_20d": float(c.pct_change(20).iloc[-1] * 100),
+        "high_52w": float(c.tail(252).max()),
+        "low_52w": float(c.tail(252).min()),
+    })
+    out["from_52w_high"] = (price / out["high_52w"] - 1) * 100
+
+    # 거래량 급증 여부
+    if vol is not None and len(vol.dropna()) > 20:
+        v = vol.dropna()
+        out["vol_ratio"] = float(v.iloc[-1] / v.tail(20).mean())
+    else:
+        out["vol_ratio"] = np.nan
+    return out
+
+
+def score_ticker(ind: dict) -> tuple[int, list[str], list[str]]:
+    """다중 요인 0~100 스코어. (점수, 강세요인, 약세요인)"""
+    score = 50
+    bull: list[str] = []
+    bear: list[str] = []
+
+    # 1) 중기 추세 (20MA vs 60MA)
+    if ind["trend_up"]:
+        score += 12; bull.append("20MA>60MA 상승추세")
+    else:
+        score -= 12; bear.append("20MA<60MA 하락추세")
+
+    # 2) 장기 추세 (200MA)
+    if ind.get("above_200") is True:
+        score += 8; bull.append("200MA 위 (장기 강세)")
+    elif ind.get("above_200") is False:
+        score -= 8; bear.append("200MA 아래 (장기 약세)")
+
+    # 3) RSI 구간
+    rsi = ind["rsi"]
+    if 40 <= rsi <= 60:
+        score += 6; bull.append(f"RSI {rsi:.0f} 중립 건강")
+    elif 30 <= rsi < 40:
+        score += 10; bull.append(f"RSI {rsi:.0f} 과매도 반등 유망")
+    elif rsi < 30:
+        score += 4; bear.append(f"RSI {rsi:.0f} 과매도 (하락강도 주의)")
+    elif 60 < rsi <= 70:
+        score -= 2; bear.append(f"RSI {rsi:.0f} 다소 과열")
+    else:
+        score -= 8; bear.append(f"RSI {rsi:.0f} 과매수 (조정 위험)")
+
+    # 4) RSI 방향 전환
+    if ind["rsi"] > ind["rsi_prev"] and ind["rsi_prev"] < 45:
+        score += 5; bull.append("RSI 저점 반등 전환")
+
+    # 5) MACD
+    if ind["macd_cross_up"]:
+        score += 10; bull.append("MACD 골든크로스 발생")
+    elif ind["macd_hist"] > 0 and ind["macd_hist"] > ind["macd_hist_prev"]:
+        score += 5; bull.append("MACD 모멘텀 강화")
+    elif ind["macd_hist"] < 0 and ind["macd_hist"] < ind["macd_hist_prev"]:
+        score -= 6; bear.append("MACD 모멘텀 약화")
+
+    # 6) 20MA 지지 근접 (눌림목)
+    d20 = ind["dist20"]
+    if ind["trend_up"] and -4 < d20 < 1:
+        score += 10; bull.append(f"20MA 지지 근접 ({d20:+.1f}%) 눌림목")
+    elif d20 > 12:
+        score -= 6; bear.append(f"20MA 이격 과대 ({d20:+.1f}%) 추격 위험")
+
+    # 7) 볼린저 위치
+    bb = ind["bb_pct"]
+    if bb < 0.2:
+        score += 4; bull.append("볼린저 하단 (반등 기대)")
+    elif bb > 0.95:
+        score -= 4; bear.append("볼린저 상단 돌파 (과열)")
+
+    # 8) 52주 고점 근접
+    fh = ind["from_52w_high"]
+    if fh > -3:
+        score += 4; bull.append(f"52주 신고가 부근 ({fh:+.1f}%)")
+    elif fh < -40:
+        bear.append(f"52주 고점 대비 {fh:.0f}% (낙폭 과대)")
+
+    # 9) 거래량
+    vr = ind.get("vol_ratio")
+    if vr and vr > 1.8:
+        score += 4; bull.append(f"거래량 급증 ({vr:.1f}x)")
+
+    score = max(0, min(100, score))
+    return int(score), bull, bear
+
+
+def signal_label(score: int) -> str:
+    if score >= 75:
+        return "🟢 강력매수"
+    if score >= 62:
+        return "🟢 매수"
+    if score >= 45:
+        return "🟡 관망"
+    if score >= 32:
+        return "🟠 주의"
+    return "🔴 회피"
+
+
+@st.cache_data(ttl=60 * 30, show_spinner=False)
+def get_fundamentals(ticker: str) -> dict:
+    """yfinance 펀더멘털 (sp-global 대체)."""
+    try:
+        info = yf.Ticker(ticker).info
+    except Exception:
+        return {}
+    keys = {
+        "longName": "회사명", "sector": "섹터", "industry": "산업",
+        "marketCap": "시가총액", "enterpriseValue": "EV",
+        "trailingPE": "PER(TTM)", "forwardPE": "PER(Fwd)",
+        "priceToSalesTrailing12Months": "PSR", "priceToBook": "PBR",
+        "enterpriseToRevenue": "EV/Rev", "enterpriseToEbitda": "EV/EBITDA",
+        "profitMargins": "순이익률", "grossMargins": "매출총이익률",
+        "revenueGrowth": "매출성장률", "earningsGrowth": "이익성장률",
+        "totalRevenue": "매출(TTM)", "totalCash": "현금",
+        "totalDebt": "부채", "freeCashflow": "FCF", "beta": "베타",
+        "targetMeanPrice": "목표주가(평균)", "recommendationKey": "투자의견",
+        "numberOfAnalystOpinions": "애널리스트수",
+    }
+    return {kr: info.get(en) for en, kr in keys.items()}
+
+
+def make_candle_chart(ticker: str, ohlc: pd.DataFrame) -> go.Figure:
+    c = ohlc["Close"]
+    ma20 = c.rolling(20).mean()
+    ma60 = c.rolling(60).mean()
+    ma200 = c.rolling(200).mean()
+
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(
+        x=ohlc.index, open=ohlc["Open"], high=ohlc["High"],
+        low=ohlc["Low"], close=ohlc["Close"], name=ticker,
+        increasing_line_color="#26a69a", decreasing_line_color="#ef5350",
+    ))
+    fig.add_trace(go.Scatter(x=ohlc.index, y=ma20, name="20MA",
+                             line=dict(color="#ffa726", width=1)))
+    fig.add_trace(go.Scatter(x=ohlc.index, y=ma60, name="60MA",
+                             line=dict(color="#42a5f5", width=1)))
+    fig.add_trace(go.Scatter(x=ohlc.index, y=ma200, name="200MA",
+                             line=dict(color="#ab47bc", width=1)))
+    fig.update_layout(
+        height=480, margin=dict(l=10, r=10, t=30, b=10),
+        xaxis_rangeslider_visible=False, legend=dict(orientation="h"),
+    )
+    return fig
+
+
+def fmt_big(v) -> str:
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return "N/A"
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return str(v)
+    for unit, div in [("T", 1e12), ("B", 1e9), ("M", 1e6)]:
+        if abs(v) >= div:
+            return f"${v/div:.2f}{unit}"
+    return f"${v:,.0f}"
+
+
+def fmt_pct(v) -> str:
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return "N/A"
+    return f"{float(v)*100:.1f}%"
+
+
+# ---------- Watchlist persistence (URL query param) ----------
+def load_watchlist() -> list[str]:
+    qp = st.query_params.get("wl")
+    if qp:
+        return [t.strip().upper() for t in qp.split(",") if t.strip()]
+    return DEFAULT_WATCHLIST.copy()
+
+
+def save_watchlist(tickers: list[str]) -> None:
+    st.query_params["wl"] = ",".join(tickers)
+
+
+# ===== Watchlist tab =====
+with tab_watchlist:
+    st.subheader("👀 관심종목 시그널")
+
+    if "watchlist" not in st.session_state:
+        st.session_state.watchlist = load_watchlist()
+
+    # --- 종목 추가/삭제 UI ---
+    with st.container(border=True):
+        c1, c2, c3 = st.columns([3, 1, 1])
+        new_t = c1.text_input("종목 추가", placeholder="예: AAPL (엔터)",
+                              label_visibility="collapsed").strip().upper()
+        if c2.button("➕ 추가", use_container_width=True) and new_t:
+            if new_t not in st.session_state.watchlist:
+                st.session_state.watchlist.append(new_t)
+                save_watchlist(st.session_state.watchlist)
+                st.rerun()
+        if c3.button("🔄 기본값", use_container_width=True,
+                     help="기본 관심종목으로 리셋"):
+            st.session_state.watchlist = DEFAULT_WATCHLIST.copy()
+            save_watchlist(st.session_state.watchlist)
+            st.rerun()
+
+        # 현재 종목 칩 (삭제 가능)
+        if st.session_state.watchlist:
+            chip_cols = st.columns(min(len(st.session_state.watchlist), 8))
+            for i, t in enumerate(st.session_state.watchlist):
+                if chip_cols[i % 8].button(f"✕ {t}", key=f"del_{t}",
+                                           use_container_width=True):
+                    st.session_state.watchlist.remove(t)
+                    save_watchlist(st.session_state.watchlist)
+                    st.rerun()
+
+    tickers = st.session_state.watchlist
+    st.caption("💾 관심종목은 URL에 저장돼요 — 이 페이지를 **북마크**하면 다음에도 유지됩니다.")
+
+    # --- 필터 ---
+    fcol1, fcol2 = st.columns([2, 3])
+    only_signal = fcol1.toggle("매수 시그널(62점↑)만 보기", value=False)
 
     if tickers:
-        wdf = fetch_slow(tuple(tickers), period="1y")
+        with st.spinner("지표 계산중..."):
+            wdf = fetch_slow(tuple(tickers), period="1y")
         rows = []
+        details: dict[str, tuple] = {}
         for t in tickers:
-            if t not in wdf.columns:
+            if t not in (wdf.columns if hasattr(wdf, "columns") else []):
                 continue
             s = wdf[t].dropna()
-            if len(s) < 80:
+            ind = compute_indicators(s)
+            if not ind:
                 continue
-            ma20 = s.rolling(20).mean()
-            ma60 = s.rolling(60).mean()
-            # RSI(14)
-            delta = s.diff()
-            gain = delta.clip(lower=0).rolling(14).mean()
-            loss = (-delta.clip(upper=0)).rolling(14).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-
-            price = float(s.iloc[-1])
-            dist20 = (price / ma20.iloc[-1] - 1) * 100
-            trend_up = ma20.iloc[-1] > ma60.iloc[-1]
-            rsi_now = float(rsi.iloc[-1])
-            ret_5d = float(s.pct_change(5).iloc[-1] * 100)
-
-            signal = trend_up and abs(dist20) < 3 and 30 < rsi_now < 50
+            score, bull, bear = score_ticker(ind)
+            details[t] = (ind, score, bull, bear)
             rows.append({
                 "티커": t,
-                "현재가": round(price, 2),
-                "5일": f"{ret_5d:+.1f}%",
-                "20MA 이격": f"{dist20:+.1f}%",
-                "추세": "↑" if trend_up else "↓",
-                "RSI": round(rsi_now, 1),
-                "시그널": "🎯" if signal else "",
+                "점수": score,
+                "시그널": signal_label(score),
+                "현재가": round(ind["price"], 2),
+                "RSI": round(ind["rsi"], 0),
+                "20MA이격": round(ind["dist20"], 1),
+                "추세": "↑" if ind["trend_up"] else "↓",
+                "MACD": "▲" if ind["macd_hist"] > 0 else "▼",
+                "5일%": round(ind["ret_5d"], 1),
+                "52H대비": round(ind["from_52w_high"], 0),
             })
 
-        rdf = pd.DataFrame(rows).sort_values("시그널", ascending=False)
-        st.dataframe(rdf, use_container_width=True, hide_index=True)
+        if rows:
+            rdf = pd.DataFrame(rows).sort_values("점수", ascending=False)
+            if only_signal:
+                rdf = rdf[rdf["점수"] >= 62]
 
-        st.caption("🎯 = 상승추세 + 20MA 지지 근접 + RSI 과매도 반등 구간")
+            st.dataframe(
+                rdf, use_container_width=True, hide_index=True,
+                column_config={
+                    "점수": st.column_config.ProgressColumn(
+                        "점수", min_value=0, max_value=100, format="%d"),
+                    "20MA이격": st.column_config.NumberColumn(format="%.1f%%"),
+                    "5일%": st.column_config.NumberColumn(format="%.1f%%"),
+                    "52H대비": st.column_config.NumberColumn(format="%.0f%%"),
+                    "현재가": st.column_config.NumberColumn(format="$%.2f"),
+                },
+            )
+
+            # --- 종목별 근거 펼쳐보기 ---
+            st.subheader("📋 종목별 시그널 근거")
+            pick = st.selectbox("종목 선택", rdf["티커"].tolist())
+            if pick in details:
+                ind, score, bull, bear = details[pick]
+                mc1, mc2, mc3, mc4 = st.columns(4)
+                mc1.metric("종합점수", f"{score}", signal_label(score).split()[1])
+                mc2.metric("RSI", f"{ind['rsi']:.0f}")
+                mc3.metric("20MA 이격", f"{ind['dist20']:+.1f}%")
+                mc4.metric("52주高 대비", f"{ind['from_52w_high']:+.0f}%")
+                bc1, bc2 = st.columns(2)
+                with bc1:
+                    st.markdown("**🟢 강세 요인**")
+                    for b in bull:
+                        st.markdown(f"- {b}")
+                    if not bull:
+                        st.caption("없음")
+                with bc2:
+                    st.markdown("**🔴 약세 요인**")
+                    for b in bear:
+                        st.markdown(f"- {b}")
+                    if not bear:
+                        st.caption("없음")
+                st.info(f"💡 **{pick}** 더 자세히 보려면 → 상단 **🔬 종목 분석** 탭에서 입력")
+        else:
+            st.warning("데이터를 불러오지 못했습니다. 티커를 확인하세요.")
+
+
+# ===== Stock deep-dive tab (sp-global 대체) =====
+with tab_stock:
+    st.subheader("🔬 종목 심층분석")
+    st.caption("펀더멘털 + 기술적 + AI 코멘트 · 무료 데이터 기반 tear-sheet")
+
+    dc1, dc2 = st.columns([2, 1])
+    ticker = dc1.text_input("티커 입력", value="RKLB").strip().upper()
+    period = dc2.selectbox("기간", ["6mo", "1y", "2y", "5y"], index=1)
+
+    if ticker:
+        ohlc = fetch_ohlc(ticker, period)
+        if ohlc.empty or len(ohlc) < 30:
+            st.error(f"'{ticker}' 데이터를 찾을 수 없습니다.")
+        else:
+            ind = compute_indicators(ohlc["Close"], ohlc.get("Volume"))
+            score, bull, bear = score_ticker(ind)
+            fund = get_fundamentals(ticker)
+
+            # 상단 요약
+            name = fund.get("회사명") or ticker
+            st.markdown(f"### {name} ({ticker})")
+            sub = []
+            if fund.get("섹터"):
+                sub.append(fund["섹터"])
+            if fund.get("산업"):
+                sub.append(fund["산업"])
+            if sub:
+                st.caption(" · ".join(sub))
+
+            k1, k2, k3, k4, k5 = st.columns(5)
+            k1.metric("현재가", f"${ind['price']:.2f}", f"{ind['ret_5d']:+.1f}% (5d)")
+            k2.metric("종합점수", f"{score}", signal_label(score).split()[1])
+            k3.metric("RSI", f"{ind['rsi']:.0f}")
+            k4.metric("시총", fmt_big(fund.get("시가총액")))
+            tgt = fund.get("목표주가(평균)")
+            if tgt:
+                upside = (tgt / ind["price"] - 1) * 100
+                k5.metric("목표주가", f"${tgt:.0f}", f"{upside:+.0f}%")
+            else:
+                k5.metric("목표주가", "N/A")
+
+            # 차트
+            st.plotly_chart(make_candle_chart(ticker, ohlc), use_container_width=True)
+
+            # 펀더멘털 표
+            st.markdown("#### 💼 펀더멘털")
+            fcols = st.columns(4)
+            fund_display = [
+                ("PER(Fwd)", fund.get("PER(Fwd)"), "x"),
+                ("PSR", fund.get("PSR"), "x"),
+                ("EV/Rev", fund.get("EV/Rev"), "x"),
+                ("EV/EBITDA", fund.get("EV/EBITDA"), "x"),
+                ("매출성장률", fund.get("매출성장률"), "%"),
+                ("매출총이익률", fund.get("매출총이익률"), "%"),
+                ("순이익률", fund.get("순이익률"), "%"),
+                ("베타", fund.get("베타"), "x"),
+            ]
+            for i, (lbl, val, unit) in enumerate(fund_display):
+                with fcols[i % 4]:
+                    if val is None or (isinstance(val, float) and np.isnan(val)):
+                        st.metric(lbl, "N/A")
+                    elif unit == "%":
+                        st.metric(lbl, fmt_pct(val))
+                    else:
+                        st.metric(lbl, f"{float(val):.1f}x")
+
+            fc2 = st.columns(4)
+            fc2[0].metric("매출(TTM)", fmt_big(fund.get("매출(TTM)")))
+            fc2[1].metric("현금", fmt_big(fund.get("현금")))
+            fc2[2].metric("부채", fmt_big(fund.get("부채")))
+            fc2[3].metric("FCF", fmt_big(fund.get("FCF")))
+
+            # 기술적 근거
+            st.markdown("#### 📊 기술적 시그널")
+            tc1, tc2 = st.columns(2)
+            with tc1:
+                st.markdown("**🟢 강세 요인**")
+                for b in bull:
+                    st.markdown(f"- {b}")
+                if not bull:
+                    st.caption("없음")
+            with tc2:
+                st.markdown("**🔴 약세 요인**")
+                for b in bear:
+                    st.markdown(f"- {b}")
+                if not bear:
+                    st.caption("없음")
+
+            # AI 종합 코멘트
+            st.markdown("#### 🤖 AI 종합 코멘트")
+            if st.button("🔮 AI 분석 생성", type="primary",
+                         disabled=_get_groq_key() is None, key="stock_ai"):
+                with st.spinner("AI 분석중..."):
+                    fund_txt = "\n".join(
+                        f"- {k}: {v}" for k, v in fund.items()
+                        if v is not None and not (isinstance(v, float) and np.isnan(v))
+                    )
+                    prompt = f"""다음은 {name}({ticker}) 종목 데이터다.
+
+# 펀더멘털
+{fund_txt}
+
+# 기술적 지표
+- 현재가: ${ind['price']:.2f}
+- 종합 기술점수: {score}/100 ({signal_label(score)})
+- RSI: {ind['rsi']:.0f}
+- 추세: {'상승(20MA>60MA)' if ind['trend_up'] else '하락'}
+- 200MA 위치: {'위' if ind.get('above_200') else '아래' if ind.get('above_200') is False else 'N/A'}
+- 20MA 이격: {ind['dist20']:+.1f}%
+- MACD 히스토그램: {ind['macd_hist']:.2f}
+- 52주 고점 대비: {ind['from_52w_high']:+.1f}%
+- 강세요인: {', '.join(bull) if bull else '없음'}
+- 약세요인: {', '.join(bear) if bear else '없음'}
+
+일/주봉 스윙 트레이더 관점에서 한국어로 다음을 작성하라 (## 헤더):
+
+## 한 줄 결론
+지금 이 종목을 어떻게 봐야 하는지 한 문장.
+
+## 펀더멘털 평가
+밸류에이션이 비싼지 싼지, 성장성/수익성은 어떤지. 동종 섹터(우주/방산/AI 등) 맥락에서.
+
+## 기술적 위치
+현재 차트상 위치 — 눌림목인지 과열인지, 지지/저항 어디 보는지.
+
+## 진입 전략
+(1) 지금 들어갈 자리인지 (2) 들어간다면 분할매수 vs 대기 (3) 손절 기준 어디로 (4) 주의할 리스크.
+
+근거와 함께 명확하게. 과한 디스클레이머 금지. 단, 투자 결정은 본인 책임임을 마지막 한 줄로만 명시."""
+                    ans = call_groq(prompt)
+                    st.session_state[f"stock_ai_{ticker}"] = ans
+            if f"stock_ai_{ticker}" in st.session_state:
+                st.markdown(st.session_state[f"stock_ai_{ticker}"])
+            elif _get_groq_key() is None:
+                st.caption("⚠️ Groq API 키 설정 시 AI 코멘트 사용 가능 (🤖 AI 해석 탭 참고)")
