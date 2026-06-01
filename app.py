@@ -233,8 +233,9 @@ st.caption(
     "yfinance 자체 지연 ~15분"
 )
 
-tab_ai, tab_sentiment, tab_macro, tab_themes, tab_watchlist, tab_stock = st.tabs(
-    ["🤖 AI 해석", "🧠 시장 심리", "🌐 매크로", "🚀 테마", "👀 관심종목", "🔬 종목 분석"]
+tab_ai, tab_sentiment, tab_macro, tab_themes, tab_watchlist, tab_stock, tab_backtest = st.tabs(
+    ["🤖 AI 해석", "🧠 시장 심리", "🌐 매크로", "🚀 테마", "👀 관심종목",
+     "🔬 종목 분석", "🧪 백테스트"]
 )
 
 # ===== Sentiment tab =====
@@ -707,6 +708,83 @@ def get_fundamentals(ticker: str) -> dict:
     return {kr: info.get(en) for en, kr in keys.items()}
 
 
+# ---------- Factor scoring (value / momentum / quality) ----------
+@st.cache_data(ttl=60 * 60, show_spinner=False)
+def get_factor_raw(ticker: str) -> dict:
+    """팩터 계산용 원시 펀더멘털. 1시간 캐시."""
+    try:
+        info = yf.Ticker(ticker).info
+    except Exception:
+        return {}
+    return {
+        "per": info.get("forwardPE") or info.get("trailingPE"),
+        "psr": info.get("priceToSalesTrailing12Months"),
+        "ev_ebitda": info.get("enterpriseToEbitda"),
+        "gross_margin": info.get("grossMargins"),
+        "profit_margin": info.get("profitMargins"),
+        "rev_growth": info.get("revenueGrowth"),
+        "roe": info.get("returnOnEquity"),
+    }
+
+
+def momentum_12_1(close: pd.Series) -> float:
+    """12개월 전 ~ 1개월 전 수익률 (가장 검증된 모멘텀 팩터)."""
+    c = close.dropna()
+    if len(c) >= 252:
+        return float(c.iloc[-21] / c.iloc[-252] - 1) * 100
+    if len(c) >= 42:  # 데이터 부족시 가용 구간
+        return float(c.iloc[-21] / c.iloc[0] - 1) * 100
+    return np.nan
+
+
+def _pctl(series: pd.Series, higher_better: bool = True) -> pd.Series:
+    r = series.rank(pct=True)
+    return (r * 100) if higher_better else ((1 - r) * 100)
+
+
+def compute_factor_scores(tickers: list[str], close_df) -> pd.DataFrame:
+    """유니버스 cross-sectional 팩터 점수 (0~100 백분위)."""
+    rows = []
+    for t in tickers:
+        fr = get_factor_raw(t)
+        if hasattr(close_df, "columns") and t in close_df.columns:
+            mom = momentum_12_1(close_df[t])
+        else:
+            mom = np.nan
+        rows.append({
+            "티커": t, "per": fr.get("per"), "psr": fr.get("psr"),
+            "ev_ebitda": fr.get("ev_ebitda"), "gross": fr.get("gross_margin"),
+            "profit": fr.get("profit_margin"), "growth": fr.get("rev_growth"),
+            "roe": fr.get("roe"), "mom": mom,
+        })
+    df = pd.DataFrame(rows).set_index("티커")
+
+    # Value: PER/PSR/EV-EBITDA 낮을수록 좋음 (음수/0 제외)
+    val_parts = []
+    for col in ["per", "psr", "ev_ebitda"]:
+        s = pd.to_numeric(df[col], errors="coerce").where(lambda x: x > 0)
+        if s.notna().sum() >= 2:
+            val_parts.append(_pctl(s, higher_better=False))
+    value = pd.concat(val_parts, axis=1).mean(axis=1) if val_parts else pd.Series(np.nan, index=df.index)
+
+    # Quality: 마진/성장/ROE 높을수록 좋음
+    qual_parts = []
+    for col in ["gross", "profit", "growth", "roe"]:
+        s = pd.to_numeric(df[col], errors="coerce")
+        if s.notna().sum() >= 2:
+            qual_parts.append(_pctl(s, higher_better=True))
+    quality = pd.concat(qual_parts, axis=1).mean(axis=1) if qual_parts else pd.Series(np.nan, index=df.index)
+
+    # Momentum
+    ms = pd.to_numeric(df["mom"], errors="coerce")
+    momentum = _pctl(ms, higher_better=True) if ms.notna().sum() >= 2 else pd.Series(np.nan, index=df.index)
+
+    out = pd.DataFrame({"밸류": value, "모멘텀": momentum, "퀄리티": quality})
+    out = out.fillna(50)  # 데이터 없으면 중립
+    out["팩터종합"] = out.mean(axis=1)
+    return out.round(0)
+
+
 def make_candle_chart(ticker: str, ohlc: pd.DataFrame) -> go.Figure:
     c = ohlc["Close"]
     ma20 = c.rolling(20).mean()
@@ -800,12 +878,21 @@ with tab_watchlist:
     st.caption("💾 관심종목은 URL에 저장돼요 — 이 페이지를 **북마크**하면 다음에도 유지됩니다.")
 
     # --- 필터 ---
-    fcol1, fcol2 = st.columns([2, 3])
+    fcol1, fcol2 = st.columns([2, 2])
     only_signal = fcol1.toggle("매수 시그널(62점↑)만 보기", value=False)
+    use_factors = fcol2.toggle("📐 팩터 점수 포함 (느림, 첫 로드만)", value=False,
+                               help="밸류/모멘텀/퀄리티 cross-sectional 랭킹 추가")
 
     if tickers:
         with st.spinner("지표 계산중..."):
             wdf = fetch_slow(tuple(tickers), period="1y")
+
+        # 팩터 점수 (옵션)
+        factor_df = None
+        if use_factors:
+            with st.spinner("팩터 데이터 수집중 (종목당 ~1초)..."):
+                factor_df = compute_factor_scores(tickers, wdf)
+
         rows = []
         details: dict[str, tuple] = {}
         for t in tickers:
@@ -817,35 +904,47 @@ with tab_watchlist:
                 continue
             score, bull, bear = score_ticker(ind)
             details[t] = (ind, score, bull, bear)
-            rows.append({
+            row = {
                 "티커": t,
-                "점수": score,
+                "기술점수": score,
                 "시그널": signal_label(score),
                 "현재가": round(ind["price"], 2),
                 "RSI": round(ind["rsi"], 0),
                 "20MA이격": round(ind["dist20"], 1),
                 "추세": "↑" if ind["trend_up"] else "↓",
                 "MACD": "▲" if ind["macd_hist"] > 0 else "▼",
-                "5일%": round(ind["ret_5d"], 1),
                 "52H대비": round(ind["from_52w_high"], 0),
-            })
+            }
+            if factor_df is not None and t in factor_df.index:
+                fr = factor_df.loc[t]
+                row["밸류"] = int(fr["밸류"])
+                row["모멘텀"] = int(fr["모멘텀"])
+                row["퀄리티"] = int(fr["퀄리티"])
+                # 종합 = 기술 50% + 팩터 50%
+                row["종합"] = int(round(0.5 * score + 0.5 * fr["팩터종합"]))
+            rows.append(row)
 
         if rows:
-            rdf = pd.DataFrame(rows).sort_values("점수", ascending=False)
+            sort_col = "종합" if factor_df is not None else "기술점수"
+            rdf = pd.DataFrame(rows).sort_values(sort_col, ascending=False)
             if only_signal:
-                rdf = rdf[rdf["점수"] >= 62]
+                rdf = rdf[rdf["기술점수"] >= 62]
 
-            st.dataframe(
-                rdf, use_container_width=True, hide_index=True,
-                column_config={
-                    "점수": st.column_config.ProgressColumn(
-                        "점수", min_value=0, max_value=100, format="%d"),
-                    "20MA이격": st.column_config.NumberColumn(format="%.1f%%"),
-                    "5일%": st.column_config.NumberColumn(format="%.1f%%"),
-                    "52H대비": st.column_config.NumberColumn(format="%.0f%%"),
-                    "현재가": st.column_config.NumberColumn(format="$%.2f"),
-                },
-            )
+            col_cfg = {
+                "기술점수": st.column_config.ProgressColumn(
+                    "기술점수", min_value=0, max_value=100, format="%d"),
+                "20MA이격": st.column_config.NumberColumn(format="%.1f%%"),
+                "52H대비": st.column_config.NumberColumn(format="%.0f%%"),
+                "현재가": st.column_config.NumberColumn(format="$%.2f"),
+            }
+            if factor_df is not None:
+                col_cfg["종합"] = st.column_config.ProgressColumn(
+                    "종합", min_value=0, max_value=100, format="%d")
+            st.dataframe(rdf, use_container_width=True, hide_index=True,
+                         column_config=col_cfg)
+            if factor_df is not None:
+                st.caption("📐 밸류/모멘텀/퀄리티는 **이 관심종목 내 상대순위**(0~100 백분위) · "
+                           "종합 = 기술 50% + 팩터 50%")
 
             # --- 종목별 근거 펼쳐보기 ---
             st.subheader("📋 종목별 시그널 근거")
@@ -1010,3 +1109,229 @@ with tab_stock:
                 st.markdown(st.session_state[f"stock_ai_{ticker}"])
             elif _get_groq_key() is None:
                 st.caption("⚠️ Groq API 키 설정 시 AI 코멘트 사용 가능 (🤖 AI 해석 탭 참고)")
+
+
+# ---------- Backtest engine ----------
+def _bt_indicators(c: pd.Series, fast: int, slow: int) -> dict:
+    delta = c.diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    rsi = 100 - (100 / (1 + gain / loss.replace(0, np.nan)))
+    ema12 = c.ewm(span=12, adjust=False).mean()
+    ema26 = c.ewm(span=26, adjust=False).mean()
+    macd = ema12 - ema26
+    macd_sig = macd.ewm(span=9, adjust=False).mean()
+    return {
+        "maf": c.rolling(fast).mean(),
+        "mas": c.rolling(slow).mean(),
+        "rsi": rsi,
+        "macd": macd,
+        "macd_sig": macd_sig,
+    }
+
+
+def generate_positions(c: pd.Series, strategy: str, p: dict) -> pd.Series:
+    """전략별 일별 포지션(1=보유, 0=현금) 생성. 룩어헤드 방지 위해 신호는 당일 종가 기준."""
+    ind = _bt_indicators(c, p["fast"], p["slow"])
+    n = len(c)
+    pos = np.zeros(n)
+
+    if strategy == "ma_cross":
+        cond = (ind["maf"] > ind["mas"]).values
+        pos = np.where(cond, 1.0, 0.0)
+
+    elif strategy == "macd":
+        cond = (ind["macd"] > ind["macd_sig"]).values
+        pos = np.where(cond, 1.0, 0.0)
+
+    elif strategy in ("rsi_mr", "rsi_trend"):
+        rsi = ind["rsi"].values
+        trend = (ind["maf"] > ind["mas"]).values
+        buy_th, sell_th = p["rsi_buy"], p["rsi_sell"]
+        state = 0
+        for i in range(n):
+            if np.isnan(rsi[i]):
+                pos[i] = state
+                continue
+            if state == 0:
+                enter = rsi[i] < buy_th
+                if strategy == "rsi_trend":
+                    enter = enter and bool(trend[i])
+                if enter:
+                    state = 1
+            elif state == 1:
+                if rsi[i] > sell_th:
+                    state = 0
+            pos[i] = state
+
+    return pd.Series(pos, index=c.index)
+
+
+def run_backtest(c: pd.Series, strategy: str, p: dict,
+                 fee: float = 0.001, stop_loss: float = 0.0,
+                 take_profit: float = 0.0) -> dict:
+    """백테스트 실행. 손절/익절 옵션 포함. 결과 dict 반환."""
+    c = c.dropna()
+    raw_pos = generate_positions(c, strategy, p)
+
+    # 손절/익절 적용 (진입가 추적)
+    if stop_loss > 0 or take_profit > 0:
+        pos_vals = raw_pos.values.copy()
+        prices = c.values
+        entry_price = None
+        for i in range(len(pos_vals)):
+            if pos_vals[i] == 1:
+                if entry_price is None:
+                    entry_price = prices[i]
+                else:
+                    chg = prices[i] / entry_price - 1
+                    if stop_loss > 0 and chg <= -stop_loss:
+                        pos_vals[i] = 0; entry_price = None
+                    elif take_profit > 0 and chg >= take_profit:
+                        pos_vals[i] = 0; entry_price = None
+            else:
+                entry_price = None
+        raw_pos = pd.Series(pos_vals, index=c.index)
+
+    # 룩어헤드 방지: 신호 다음날 진입
+    pos = raw_pos.shift(1).fillna(0)
+    ret = c.pct_change().fillna(0)
+    trade_chg = pos.diff().abs().fillna(0)  # 포지션 변동 → 수수료
+    strat_ret = pos * ret - trade_chg * fee
+    equity = (1 + strat_ret).cumprod()
+    bh = (1 + ret).cumprod()
+
+    # 거래 단위 분석
+    entries = (pos.diff() > 0)
+    exits = (pos.diff() < 0)
+    trade_returns = []
+    in_pos = False
+    entry_eq = None
+    for i in range(len(pos)):
+        if entries.iloc[i] and not in_pos:
+            in_pos = True; entry_eq = equity.iloc[i]
+        elif exits.iloc[i] and in_pos:
+            in_pos = False
+            trade_returns.append(equity.iloc[i] / entry_eq - 1)
+    if in_pos and entry_eq is not None:  # 미청산 포지션
+        trade_returns.append(equity.iloc[-1] / entry_eq - 1)
+
+    n_trades = len(trade_returns)
+    wins = [r for r in trade_returns if r > 0]
+    win_rate = (len(wins) / n_trades * 100) if n_trades else 0
+
+    # 지표
+    days = (c.index[-1] - c.index[0]).days or 1
+    years = days / 365.25
+    total_ret = (equity.iloc[-1] - 1) * 100
+    bh_ret = (bh.iloc[-1] - 1) * 100
+    cagr = ((equity.iloc[-1]) ** (1 / years) - 1) * 100 if years > 0 else 0
+    mdd = ((equity / equity.cummax()) - 1).min() * 100
+    bh_mdd = ((bh / bh.cummax()) - 1).min() * 100
+    sharpe = (strat_ret.mean() / strat_ret.std() * np.sqrt(252)) if strat_ret.std() > 0 else 0
+    exposure = (pos > 0).mean() * 100
+
+    return {
+        "equity": equity, "bh": bh,
+        "total_ret": total_ret, "bh_ret": bh_ret, "cagr": cagr,
+        "mdd": mdd, "bh_mdd": bh_mdd, "sharpe": sharpe,
+        "n_trades": n_trades, "win_rate": win_rate, "exposure": exposure,
+        "avg_win": (np.mean(wins) * 100) if wins else 0,
+        "avg_loss": (np.mean([r for r in trade_returns if r <= 0]) * 100)
+        if any(r <= 0 for r in trade_returns) else 0,
+    }
+
+
+STRATEGIES = {
+    "ma_cross": "이동평균 교차 (추세추종)",
+    "macd": "MACD 교차 (추세/모멘텀)",
+    "rsi_mr": "RSI 평균회귀 (저점매수)",
+    "rsi_trend": "RSI + 추세필터 (눌림목 매수)",
+}
+
+
+# ===== Backtest tab =====
+with tab_backtest:
+    st.subheader("🧪 백테스트")
+    st.caption("과거 데이터로 전략 검증 — '내 시그널이 진짜 엣지가 있나?' 통계로 확인")
+
+    bc1, bc2, bc3 = st.columns([2, 2, 1])
+    bt_ticker = bc1.text_input("종목", value="QQQ", key="bt_ticker").strip().upper()
+    bt_strategy = bc2.selectbox("전략", list(STRATEGIES.keys()),
+                                format_func=lambda k: STRATEGIES[k])
+    bt_period = bc3.selectbox("기간", ["2y", "5y", "10y", "max"], index=1)
+
+    with st.expander("⚙️ 파라미터 튜닝", expanded=True):
+        pc1, pc2, pc3, pc4 = st.columns(4)
+        p_fast = pc1.slider("단기 MA", 5, 50, 20)
+        p_slow = pc2.slider("장기 MA", 20, 200, 60)
+        p_rsi_buy = pc3.slider("RSI 매수선", 20, 50, 35)
+        p_rsi_sell = pc4.slider("RSI 매도선", 50, 80, 65)
+        sc1, sc2, sc3 = st.columns(3)
+        p_fee = sc1.slider("수수료/슬리피지 (%)", 0.0, 0.5, 0.1, 0.05) / 100
+        p_sl = sc2.slider("손절 (%, 0=미사용)", 0, 30, 0) / 100
+        p_tp = sc3.slider("익절 (%, 0=미사용)", 0, 100, 0) / 100
+
+    if st.button("▶️ 백테스트 실행", type="primary"):
+        with st.spinner("시뮬레이션 중..."):
+            ohlc = fetch_ohlc(bt_ticker, bt_period)
+            if ohlc.empty or len(ohlc) < 100:
+                st.error(f"'{bt_ticker}' 데이터 부족")
+            else:
+                params = {"fast": p_fast, "slow": p_slow,
+                          "rsi_buy": p_rsi_buy, "rsi_sell": p_rsi_sell}
+                res = run_backtest(ohlc["Close"], bt_strategy, params,
+                                   fee=p_fee, stop_loss=p_sl, take_profit=p_tp)
+                st.session_state["bt_result"] = (bt_ticker, bt_strategy, res)
+
+    if "bt_result" in st.session_state:
+        tk, strat, res = st.session_state["bt_result"]
+
+        # 성과 카드
+        m = st.columns(4)
+        beat = res["total_ret"] - res["bh_ret"]
+        m[0].metric("전략 수익률", f"{res['total_ret']:+.1f}%",
+                    f"{beat:+.1f}%p vs 보유")
+        m[1].metric("Buy&Hold", f"{res['bh_ret']:+.1f}%")
+        m[2].metric("CAGR", f"{res['cagr']:+.1f}%")
+        m[3].metric("샤프", f"{res['sharpe']:.2f}")
+
+        m2 = st.columns(4)
+        m2[0].metric("최대낙폭(MDD)", f"{res['mdd']:.1f}%",
+                     f"보유 {res['bh_mdd']:.1f}%", delta_color="off")
+        m2[1].metric("승률", f"{res['win_rate']:.0f}%", f"{res['n_trades']}회 거래")
+        m2[2].metric("평균수익/손실", f"{res['avg_win']:+.1f}% / {res['avg_loss']:.1f}%")
+        m2[3].metric("시장 노출", f"{res['exposure']:.0f}%")
+
+        # 수익곡선
+        eq_fig = go.Figure()
+        eq_fig.add_trace(go.Scatter(x=res["equity"].index, y=res["equity"].values,
+                                    name="전략", line=dict(color="#2e7d32", width=2)))
+        eq_fig.add_trace(go.Scatter(x=res["bh"].index, y=res["bh"].values,
+                                    name="Buy & Hold", line=dict(color="#90a4ae", width=1.5, dash="dot")))
+        eq_fig.update_layout(height=400, margin=dict(l=10, r=10, t=30, b=10),
+                             legend=dict(orientation="h"), yaxis_title="누적 배수 (1=원금)",
+                             title=f"{tk} · {STRATEGIES[strat]}")
+        st.plotly_chart(eq_fig, use_container_width=True)
+
+        # 해석
+        verdict = []
+        if beat > 0 and res["sharpe"] > 0.8:
+            verdict.append("✅ **이 전략은 단순 보유를 이겼고 샤프도 양호** — 엣지가 있어 보입니다.")
+        elif beat > 0:
+            verdict.append("🟡 보유보다 수익은 높지만 위험대비 효율(샤프)이 평범합니다.")
+        else:
+            verdict.append("🔴 **단순 보유(Buy&Hold)보다 못합니다** — 이 종목/기간엔 이 전략 엣지 없음.")
+        if res["mdd"] > res["bh_mdd"]:
+            verdict.append(f"⚠️ MDD가 보유보다 큼 ({res['mdd']:.0f}% vs {res['bh_mdd']:.0f}%) — 변동성 방어 효과 없음.")
+        else:
+            verdict.append(f"🛡️ MDD를 보유보다 줄임 ({res['mdd']:.0f}% vs {res['bh_mdd']:.0f}%) — 하락 방어엔 성공.")
+        if res["n_trades"] < 5:
+            verdict.append("📉 거래 횟수가 적어 통계적 신뢰도 낮음 — 기간을 늘려보세요.")
+        for v in verdict:
+            st.markdown(v)
+
+        st.caption(
+            "⚠️ 백테스트 함정: 과거가 미래를 보장하지 않음 · 파라미터를 과하게 맞추면(오버피팅) "
+            "실전에서 무너짐 · 여러 종목·기간에서 일관되게 통하는지 봐야 진짜 엣지."
+        )
