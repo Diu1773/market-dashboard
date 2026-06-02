@@ -880,7 +880,7 @@ with tab_earnings:
 
                 fig_ep = go.Figure()
                 fig_ep.add_trace(go.Bar(x=periods_label, y=rev_vals,
-                                        name="매출 ($B)", marker_color="#1a1a4e88",
+                                        name="매출 ($B)", marker_color="rgba(26,26,78,0.6)",
                                         yaxis="y"))
                 if eps_vals:
                     fig_ep.add_trace(go.Scatter(x=periods_label, y=eps_vals,
