@@ -13,8 +13,9 @@ from utils.i18n import t
 from utils.data import (
     fetch_fast, fetch_macro, fetch_slow, fetch_ohlc,
     fetch_vix_quote, get_fundamentals, get_factor_raw,
-    get_earnings_calendar, get_quarterly_financials,
+    get_earnings_calendar, get_quarterly_financials, load_history,
 )
+from utils.news import fetch_ticker_news, fetch_market_news
 from utils.indicators import (
     compute_sentiment, sentiment_label,
     compute_indicators, score_ticker, signal_label,
@@ -62,11 +63,11 @@ st.caption(
 tab_names = [
     t("tab_ai", lang), t("tab_sentiment", lang), t("tab_macro", lang),
     t("tab_themes", lang), t("tab_watchlist", lang), t("tab_stock", lang),
-    t("tab_backtest", lang), t("tab_earnings", lang),
+    t("tab_backtest", lang), t("tab_earnings", lang), "📰 뉴스",
 ]
 tabs = st.tabs(tab_names)
 (tab_ai, tab_sentiment, tab_macro, tab_themes,
- tab_watchlist, tab_stock, tab_backtest, tab_earnings) = tabs
+ tab_watchlist, tab_stock, tab_backtest, tab_earnings, tab_news) = tabs
 
 # ── 테마 ETF 유니버스 ──────────────────────────────────────────
 THEMES: dict[str, list[tuple[str, str]]] = {
@@ -177,6 +178,41 @@ with tab_sentiment:
             cols[0].write(f"**{c.name}**")
             cols[1].write(f"`{c.score:.0f}`")
             cols[2].progress(int(c.score) / 100, text=c.note)
+
+    # ── Fear/Greed 추세 (GitHub Actions가 매일 기록) ──
+    hist = load_history()
+    if not hist.empty and len(hist) > 2:
+        st.subheader("📈 " + ("Fear & Greed 추세" if lang == "ko" else "Fear & Greed Trend"))
+        fg_fig = go.Figure()
+        # 배경 구간 색칠
+        for y0, y1, clr in [(0,25,"#ffebee"),(25,45,"#fff3e0"),(45,55,"#fffde7"),
+                            (55,75,"#f1f8e9"),(75,100,"#e8f5e9")]:
+            fg_fig.add_hrect(y0=y0, y1=y1, fillcolor=clr, line_width=0, layer="below")
+        fg_fig.add_trace(go.Scatter(
+            x=hist["date"], y=hist["fear_greed"],
+            mode="lines+markers", name="Fear/Greed",
+            line=dict(color="#1a1a4e", width=2),
+            marker=dict(size=4),
+        ))
+        # 현재 값 점
+        fg_fig.add_trace(go.Scatter(
+            x=[hist["date"].iloc[-1]], y=[hist["fear_greed"].iloc[-1]],
+            mode="markers", marker=dict(size=12, color=color),
+            showlegend=False,
+        ))
+        fg_fig.update_layout(
+            height=260, margin=dict(l=10, r=10, t=10, b=10),
+            yaxis=dict(range=[0, 100], title="Fear ← → Greed"),
+            showlegend=False,
+        )
+        st.plotly_chart(fg_fig, use_container_width=True)
+        st.caption(
+            f"{'최근' if lang=='ko' else 'Last'} {len(hist)} {'개 기록' if lang=='ko' else 'records'} · "
+            f"{'GitHub Actions가 매일 자동 기록' if lang=='ko' else 'Auto-recorded daily via GitHub Actions'}"
+        )
+    else:
+        st.info("📈 " + ("추세 차트는 GitHub Actions가 데이터를 쌓으면 표시됩니다"
+                         if lang == "ko" else "Trend chart appears once GitHub Actions accumulates data"))
 
 
 # ════════════════════════════════════════════════
@@ -424,19 +460,131 @@ with tab_stock:
             else:
                 k5.metric("목표주가", "N/A")
 
-            # 캔들 차트
+            # ── 고급 차트 (캔들 + 볼린저 + 거래량 + RSI + MACD) ──
+            from plotly.subplots import make_subplots
+
             c = ohlc["Close"]
-            fig = go.Figure()
+            vol = ohlc.get("Volume", pd.Series(dtype=float))
+
+            # 볼린저밴드
+            bb_mid = c.rolling(20).mean()
+            bb_std = c.rolling(20).std()
+            bb_up  = bb_mid + 2 * bb_std
+            bb_dn  = bb_mid - 2 * bb_std
+
+            # RSI
+            d = c.diff()
+            rsi_line = 100 - 100 / (1 + d.clip(lower=0).rolling(14).mean() /
+                                     (-d.clip(upper=0)).rolling(14).mean().replace(0, 1e-9))
+
+            # MACD
+            ema12 = c.ewm(span=12, adjust=False).mean()
+            ema26 = c.ewm(span=26, adjust=False).mean()
+            macd_line = ema12 - ema26
+            macd_sig  = macd_line.ewm(span=9, adjust=False).mean()
+            macd_hist_s = macd_line - macd_sig
+
+            # 지지/저항 (로컬 고점/저점)
+            try:
+                from scipy.signal import argrelextrema
+                close_arr = c.values
+                local_max_idx = argrelextrema(close_arr, np.greater, order=10)[0]
+                local_min_idx = argrelextrema(close_arr, np.less,    order=10)[0]
+                resistance_levels = sorted(set([round(close_arr[i], 2) for i in local_max_idx[-5:]]), reverse=True)[:3]
+                support_levels    = sorted(set([round(close_arr[i], 2) for i in local_min_idx[-5:]]))[:3]
+            except Exception:
+                resistance_levels, support_levels = [], []
+
+            has_vol = vol is not None and len(vol.dropna()) > 10
+
+            row_heights = [0.45, 0.15, 0.2, 0.2] if has_vol else [0.5, 0.25, 0.25]
+            subplot_rows = 4 if has_vol else 3
+            row_titles = (["", "Volume", "RSI", "MACD"] if has_vol
+                          else ["", "RSI", "MACD"])
+
+            fig = make_subplots(
+                rows=subplot_rows, cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.03,
+                row_heights=row_heights,
+                subplot_titles=row_titles,
+            )
+
+            # 캔들
             fig.add_trace(go.Candlestick(
                 x=ohlc.index, open=ohlc["Open"], high=ohlc["High"],
-                low=ohlc["Low"], close=ohlc["Close"], name=ticker,
+                low=ohlc["Low"], close=c, name=ticker,
                 increasing_line_color="#26a69a", decreasing_line_color="#ef5350",
-            ))
-            for ma, color, name_ in [(20, "#ffa726","20MA"),(60,"#42a5f5","60MA"),(200,"#ab47bc","200MA")]:
+                showlegend=False,
+            ), row=1, col=1)
+
+            # 이평선
+            for ma, clr, nm in [(20,"#ffa726","20MA"),(60,"#42a5f5","60MA"),(200,"#ab47bc","200MA")]:
                 fig.add_trace(go.Scatter(x=ohlc.index, y=c.rolling(ma).mean(),
-                                         name=name_, line=dict(color=color, width=1)))
-            fig.update_layout(height=450, margin=dict(l=10,r=10,t=30,b=10),
-                              xaxis_rangeslider_visible=False, legend=dict(orientation="h"))
+                                          name=nm, line=dict(color=clr, width=1),
+                                          showlegend=True), row=1, col=1)
+
+            # 볼린저
+            fig.add_trace(go.Scatter(x=ohlc.index, y=bb_up, name="BB상단",
+                                      line=dict(color="#607d8b", width=1, dash="dot"),
+                                      showlegend=False), row=1, col=1)
+            fig.add_trace(go.Scatter(x=ohlc.index, y=bb_dn, name="BB하단",
+                                      line=dict(color="#607d8b", width=1, dash="dot"),
+                                      fill="tonexty", fillcolor="rgba(96,125,139,0.07)",
+                                      showlegend=False), row=1, col=1)
+
+            # 지지/저항 수평선
+            for lvl in resistance_levels:
+                fig.add_hline(y=lvl, line_color="#ef5350", line_dash="dash",
+                              line_width=1, row=1, col=1,
+                              annotation_text=f"저항 ${lvl}", annotation_position="right",
+                              annotation_font_size=9)
+            for lvl in support_levels:
+                fig.add_hline(y=lvl, line_color="#26a69a", line_dash="dash",
+                              line_width=1, row=1, col=1,
+                              annotation_text=f"지지 ${lvl}", annotation_position="right",
+                              annotation_font_size=9)
+
+            cur_row = 2
+            # 거래량
+            if has_vol:
+                vol_colors = ["#26a69a" if float(c.iloc[i]) >= float(c.iloc[i-1])
+                              else "#ef5350" for i in range(len(c))]
+                fig.add_trace(go.Bar(x=ohlc.index, y=vol.values,
+                                      name="거래량", marker_color=vol_colors,
+                                      showlegend=False), row=cur_row, col=1)
+                cur_row += 1
+
+            # RSI
+            fig.add_trace(go.Scatter(x=ohlc.index, y=rsi_line, name="RSI",
+                                      line=dict(color="#7b1fa2", width=1.5),
+                                      showlegend=False), row=cur_row, col=1)
+            fig.add_hline(y=70, line_color="#ef5350", line_dash="dot",
+                          line_width=1, row=cur_row, col=1)
+            fig.add_hline(y=30, line_color="#26a69a", line_dash="dot",
+                          line_width=1, row=cur_row, col=1)
+            fig.update_yaxes(range=[0, 100], row=cur_row, col=1)
+            cur_row += 1
+
+            # MACD
+            macd_bar_colors = ["#26a69a" if v >= 0 else "#ef5350"
+                               for v in macd_hist_s.values]
+            fig.add_trace(go.Bar(x=ohlc.index, y=macd_hist_s.values,
+                                  name="MACD Hist", marker_color=macd_bar_colors,
+                                  showlegend=False), row=cur_row, col=1)
+            fig.add_trace(go.Scatter(x=ohlc.index, y=macd_line, name="MACD",
+                                      line=dict(color="#1565c0", width=1.2),
+                                      showlegend=False), row=cur_row, col=1)
+            fig.add_trace(go.Scatter(x=ohlc.index, y=macd_sig, name="Signal",
+                                      line=dict(color="#e65100", width=1.2),
+                                      showlegend=False), row=cur_row, col=1)
+
+            fig.update_layout(
+                height=620, margin=dict(l=10, r=80, t=30, b=10),
+                xaxis_rangeslider_visible=False,
+                legend=dict(orientation="h", y=1.02),
+                plot_bgcolor="#fafbfc",
+            )
             st.plotly_chart(fig, use_container_width=True)
 
             # 펀더멘털
@@ -478,7 +626,40 @@ with tab_stock:
                 for b in (bear or ["없음"]):
                     st.markdown(f"- {b}")
 
-            # AI
+            # ── 종목 요약 카드 ──
+            st.markdown("#### 📝 " + ("종목 요약" if lang == "ko" else "Summary"))
+            rec = fund.get("투자의견", "N/A")
+            rec_emoji = {"strong_buy": "🟢", "buy": "🟢", "hold": "🟡",
+                         "underperform": "🟠", "sell": "🔴"}.get(str(rec).lower(), "⚪")
+            analyst_n = fund.get("애널리스트수", "?")
+            tgt = fund.get("목표주가(평균)")
+            upside = f"{(tgt/ind['price']-1)*100:+.0f}%" if tgt else "N/A"
+
+            def _v(val, fmt="x"):
+                if val is None or (isinstance(val, float) and np.isnan(val)):
+                    return "N/A"
+                return f"{float(val):.1f}{fmt}"
+
+            summary_lines = [
+                f"**{name}** ({ticker}) | {fund.get('섹터','N/A')} · {fund.get('산업','N/A')}",
+                f"시총 **{fmt_big(fund.get('시가총액'))}** · EV **{fmt_big(fund.get('EV'))}** · FCF **{fmt_big(fund.get('FCF'))}**",
+                "밸류에이션: PER(Fwd) **" + _v(fund.get('PER(Fwd)')) + "** · "
+                "PSR **" + _v(fund.get('PSR')) + "** · "
+                "EV/Rev **" + _v(fund.get('EV/Rev')) + "**",
+                "성장: 매출 **" + fmt_pct(fund.get('매출성장률')) + "** · 이익 **" + fmt_pct(fund.get('이익성장률')) +
+                "** | 마진: 총이익 **" + fmt_pct(fund.get('매출총이익률')) + "** · 순이익 **" + fmt_pct(fund.get('순이익률')) + "**",
+                f"기술: RSI **{ind['rsi']:.0f}** · 추세 **{'↑ 상승' if ind['trend_up'] else '↓ 하락'}** · "
+                f"52주高 대비 **{ind['from_52w_high']:+.0f}%** · 베타 **{fund.get('베타', 'N/A')}**",
+                ("컨센서스: " + rec_emoji + " **" + str(rec) + "** (" + str(analyst_n) + "명) · "
+                 "목표주가 **$" + f"{tgt:.0f}" + "** (" + upside + ")")
+                if tgt else
+                ("컨센서스: " + rec_emoji + " **" + str(rec) + "** (" + str(analyst_n) + "명)"),
+            ]
+            with st.container(border=True):
+                for line in summary_lines:
+                    st.markdown(line)
+
+            # ── AI
             st.markdown(f"#### {t('ai_comment', lang)}")
             if st.button(t("ai_generate", lang), type="primary",
                          disabled=not get_groq_key(), key="stock_ai"):
@@ -836,3 +1017,126 @@ with tab_earnings:
             st.dataframe(peer_df, use_container_width=True, hide_index=True)
 
 import yfinance as yf  # peer comparison에서 직접 사용
+
+
+# ════════════════════════════════════════════════
+# TAB: 뉴스
+# ════════════════════════════════════════════════
+with tab_news:
+    st.subheader("📰 " + ("뉴스 분석" if lang == "ko" else "News Analysis"))
+
+    ncol1, ncol2 = st.columns([3, 1])
+    news_mode = ncol1.radio(
+        "모드",
+        ["관심종목 뉴스", "시장 전체 뉴스"] if lang == "ko" else ["Watchlist News", "Market News"],
+        horizontal=True, label_visibility="collapsed",
+    )
+
+    if "관심종목" in news_mode or "Watchlist" in news_mode:
+        # 관심종목 뉴스
+        wl = st.session_state.get("watchlist", DEFAULT_WATCHLIST[:5])
+        news_ticker = st.selectbox("종목 선택", wl, key="news_ticker")
+
+        col_news, col_ai = st.columns([3, 2])
+
+        with col_news:
+            with st.spinner("뉴스 수집중..."):
+                articles = fetch_ticker_news(news_ticker, max_items=10)
+
+            st.markdown(f"**{news_ticker} 최신 뉴스**")
+            for art in articles:
+                if not art["title"]:
+                    continue
+                with st.container(border=True):
+                    ncols = st.columns([5, 1])
+                    if art["link"]:
+                        ncols[0].markdown(f"**[{art['title']}]({art['link']})**")
+                    else:
+                        ncols[0].markdown(f"**{art['title']}**")
+                    ncols[1].caption(art["date"])
+                    if art["desc"]:
+                        st.caption(art["desc"][:150] + "...")
+
+        with col_ai:
+            st.markdown("**🤖 AI 감성 분석**")
+            has_key = get_groq_key() is not None
+            if not has_key:
+                st.warning("Groq API 키 필요")
+            else:
+                if st.button("분석 시작", key="news_ai_btn", type="primary"):
+                    with st.spinner("AI 분석중..."):
+                        headlines = "\n".join(
+                            f"- {a['title']}" for a in articles
+                            if a["title"] and "실패" not in a["title"]
+                        )
+                        prompt = f"""{news_ticker} 최신 뉴스 헤드라인:
+{headlines}
+
+다음 형식으로 한국어 분석:
+## 감성 판단
+🟢 긍정 / 🟡 중립 / 🔴 부정 중 하나로 결론 + 이유 1문장
+
+## 주요 테마 (불릿 3개)
+-
+## 주가 영향 예상
+단기(1~2주) 관점에서 이 뉴스들이 주가에 미칠 영향.
+
+## 주목할 뉴스
+가장 중요한 헤드라인 1개와 그 이유.
+
+간결하게, 투자 판단에 도움되는 내용만."""
+                        ans = call_groq(prompt, lang=lang)
+                        st.session_state[f"news_ai_{news_ticker}"] = ans
+
+                if f"news_ai_{news_ticker}" in st.session_state:
+                    st.markdown(st.session_state[f"news_ai_{news_ticker}"])
+                else:
+                    st.info("버튼을 눌러 AI 분석을 받아보세요")
+
+    else:
+        # 시장 전체 뉴스
+        with st.spinner("시장 뉴스 수집중..."):
+            market_articles = fetch_market_news(max_items=15)
+
+        col_mn, col_mai = st.columns([3, 2])
+
+        with col_mn:
+            st.markdown("**오늘의 시장 주요 뉴스**")
+            for art in market_articles:
+                if not art["title"]:
+                    continue
+                with st.container(border=True):
+                    mcols = st.columns([5, 1])
+                    if art["link"]:
+                        mcols[0].markdown(f"[{art['title']}]({art['link']})")
+                    else:
+                        mcols[0].markdown(art["title"])
+                    mcols[1].caption(art["date"])
+
+        with col_mai:
+            st.markdown("**🤖 시장 요약**")
+            if not get_groq_key():
+                st.warning("Groq API 키 필요")
+            else:
+                if st.button("시장 요약 생성", key="market_news_ai", type="primary"):
+                    with st.spinner("AI 분석중..."):
+                        headlines = "\n".join(
+                            f"- {a['title']}" for a in market_articles
+                            if a["title"] and "실패" not in a["title"]
+                        )
+                        prompt = f"""오늘 미국 시장 주요 뉴스:
+{headlines}
+
+## 오늘 시장 한 줄 요약
+## 섹터별 영향 (2-3개 섹터)
+## 스윙 트레이더 주목 포인트
+내일 주가에 영향 줄 이슈 2가지.
+
+한국어, 간결하게."""
+                        ans = call_groq(prompt, lang=lang)
+                        st.session_state["market_news_ai"] = ans
+
+                if "market_news_ai" in st.session_state:
+                    st.markdown(st.session_state["market_news_ai"])
+                else:
+                    st.info("버튼을 눌러 시장 요약을 받아보세요")

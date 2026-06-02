@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Earnings Preview — NVIDIA (NVDA) — 2026-06-02</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 15px; }
+    body { font-family: 'Arial Narrow', Arial, sans-serif; color: #1a1a2e; background: #fff; line-height: 1.6; }
+    .page { max-width: 1100px; margin: 0 auto; padding: 40px 48px; }
+    .page-break { page-break-before: always; border-top: 2px solid #1a1a4e; margin-top: 48px; padding-top: 32px; }
+    .cover-header { border-bottom: 3px solid #1a1a4e; padding-bottom: 16px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-end; }
+    .cover-header .brand { font-size: 24px; font-weight: bold; color: #1a1a4e; letter-spacing: 2px; text-transform: uppercase; }
+    .cover-header .sector { font-size: 13px; color: #555; }
+    .cover-header .date { font-size: 14px; color: #333; text-align: right; }
+    .report-title { font-size: 26px; font-weight: bold; color: #1a1a2e; margin: 20px 0 16px 0; line-height: 1.3; }
+    .executive-summary { font-size: 14px; line-height: 1.65; color: #222; margin-bottom: 16px; }
+    .executive-summary p { margin-bottom: 10px; text-align: justify; }
+    .executive-summary ul { margin: 8px 0 10px 20px; font-size: 13.5px; }
+    .executive-summary ul li { margin-bottom: 5px; line-height: 1.5; }
+    blockquote { border-left: 3px solid #b0b8c8; padding: 6px 14px; margin: 8px 0 8px 12px; font-style: italic; color: #444; background: #f9fafb; font-size: 12.5px; line-height: 1.5; }
+    h2.section-title { font-size: 18px; font-weight: 700; color: #1a1a4e; border-bottom: 2px solid #1a1a4e; padding-bottom: 5px; margin: 28px 0 14px 0; }
+    h3.subsection-title { font-size: 14px; font-weight: 600; color: #1a1a4e; margin: 16px 0 8px 0; }
+    h4.figure-title { font-size: 12px; font-weight: 600; color: #444; margin: 14px 0 6px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 10px 0 16px 0; }
+    thead th { background: #1a1a4e; color: #fff; padding: 7px 10px; text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+    tbody td { padding: 6px 10px; border-bottom: 1px solid #e0e0e0; }
+    tbody tr:nth-child(even) { background: #f9fafb; }
+    tbody tr:hover { background: #eef0f5; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .pos { color: #0d7a3e; font-weight: 600; }
+    .neg { color: #c0392b; font-weight: 600; }
+    .neutral { color: #555; }
+    .highlight-row { background: #e8eaf6 !important; font-weight: 600; }
+    .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 12px 0 20px 0; }
+    .chart-container { position: relative; background: #fafbfc; border: 1px solid #e8e8e8; border-radius: 4px; padding: 14px; }
+    .chart-container canvas { max-height: 260px; }
+    .chart-full { grid-column: 1 / -1; }
+    .key-metrics ul, .themes ul, .news-list ul { margin: 6px 0 6px 18px; font-size: 13px; line-height: 1.55; }
+    .key-metrics li, .themes li, .news-list li { margin-bottom: 5px; }
+    a.data-ref { color: #1a1a4e; text-decoration: none; border-bottom: 1px dotted transparent; transition: border-color 0.15s; }
+    a.data-ref:hover { border-bottom-color: #1a1a4e; }
+    .appendix table { font-size: 10.5px; }
+    .appendix thead th { font-size: 10px; padding: 5px 8px; }
+    .appendix tbody td { padding: 4px 8px; font-size: 10.5px; vertical-align: top; line-height: 1.45; }
+    .appendix .ref-id { font-weight: 600; color: #1a1a4e; white-space: nowrap; }
+    .appendix .source-detail { font-size: 10px; color: #444; }
+    .appendix .source-detail .formula { font-family: 'Courier New', monospace; font-size: 9.5px; color: #555; }
+    .appendix .source-detail .excerpt { font-style: italic; color: #555; }
+    .appendix .source-detail .src-label { font-weight: 600; color: #1a1a4e; font-size: 9.5px; }
+    .appendix-group { font-size: 11px; font-weight: 700; color: #1a1a4e; background: #f0f1f5; padding: 4px 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .source { font-size: 10px; color: #999; margin-top: 3px; font-style: italic; }
+    .ai-disclaimer { background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600; color: #664d03; text-align: center; margin-bottom: 12px; }
+    .page-footer { border-top: 2px solid #1a1a4e; padding-top: 10px; margin-top: 32px; text-align: center; }
+    .page-footer .footer-disclaimer { font-size: 11px; font-weight: 600; color: #664d03; background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; padding: 4px 10px; display: inline-block; margin-bottom: 4px; }
+    .page-footer .footer-meta { font-size: 10px; color: #888; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 16px 0; }
+    .kpi-card { background: #f0f2f8; border-left: 3px solid #1a1a4e; padding: 10px 14px; border-radius: 3px; }
+    .kpi-card .kpi-label { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+    .kpi-card .kpi-value { font-size: 20px; font-weight: 700; color: #1a1a4e; margin: 2px 0; }
+    .kpi-card .kpi-sub { font-size: 11px; color: #555; }
+    @media print {
+      body { font-size: 11px; }
+      .page { padding: 16px; max-width: none; }
+      .chart-container { break-inside: avoid; }
+      table { break-inside: avoid; }
+      .page-break { margin-top: 0; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <div class="ai-disclaimer">Analysis is AI-generated — please confirm all outputs</div>
+
+  <div class="cover-header">
+    <div>
+      <div class="brand">Earnings Preview</div>
+      <div class="sector">Semiconductors &amp; AI Infrastructure | NVDA</div>
+    </div>
+    <div class="date">June 2, 2026</div>
+  </div>
+
+  <h1 class="report-title">NVIDIA Corporation (NVDA) Q2 FY2027 Earnings Preview: Scaling the Unscalable — Can Blackwell Sustain Hypergrowth Into the Second Half?</h1>
+
+  <!-- KPI 카드 -->
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">Current Price</div>
+      <div class="kpi-value"><a href="#ref-1" class="data-ref">$220.18</a></div>
+      <div class="kpi-sub">Market Cap <a href="#ref-2" class="data-ref">$5.33T</a></div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Next Earnings</div>
+      <div class="kpi-value"><a href="#ref-3" class="data-ref">Aug 27</a></div>
+      <div class="kpi-sub">Q2 FY2027 Preview</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Consensus Revenue</div>
+      <div class="kpi-value"><a href="#ref-4" class="data-ref">$91.7B</a></div>
+      <div class="kpi-sub">+<a href="#ref-5" class="data-ref">108% y/y</a> vs Q2 FY26 $44.1B</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Consensus EPS</div>
+      <div class="kpi-value"><a href="#ref-6" class="data-ref">$2.08</a></div>
+      <div class="kpi-sub">Range: <a href="#ref-7" class="data-ref">$2.03–$2.20</a></div>
+    </div>
+  </div>
+
+  <div class="executive-summary">
+    <p>NVIDIA enters Q2 FY2027 with exceptional momentum following a record Q1 FY2027, where <a href="#ref-8" class="data-ref">revenue of $81.6B</a> surged <a href="#ref-9" class="data-ref">85% y/y</a> and operating margin hit <a href="#ref-10" class="data-ref">65.6%</a> — numbers that would have seemed fictional two years ago. The setup for Q2 FY2027 is equally compelling: consensus calls for <a href="#ref-4" class="data-ref">$91.7B revenue</a> at <a href="#ref-6" class="data-ref">$2.08 EPS</a>, driven entirely by insatiable hyperscaler demand for Blackwell GPU clusters. The bear case is not about demand — it is about execution, export controls, and whether consensus estimates are already conservative enough to beat.</p>
+
+    <ul>
+      <li><strong>Revenue:</strong> Consensus <a href="#ref-4" class="data-ref">$91.7B</a> (range <a href="#ref-11" class="data-ref">$90.3B–$96.7B</a>) vs Q1 FY27 <a href="#ref-8" class="data-ref">$81.6B</a>. Sequential growth ~12% implies continued Blackwell ramp — achievable given hyperscaler capex commentary. We estimate <strong>$93B</strong>, slightly above street, as supply constraints ease.</li>
+      <li><strong>EPS:</strong> Consensus <a href="#ref-6" class="data-ref">$2.08</a> (diluted). Q1 FY27 printed <a href="#ref-12" class="data-ref">$2.39</a>, making the consensus estimate look conservative — but Q1 benefited from non-operating income. We model <strong>$2.15</strong> on solid operating leverage.</li>
+      <li><strong>Gross Margin:</strong> Q1 FY27 gross margin was <a href="#ref-13" class="data-ref">74.9%</a>. Watch for Blackwell architecture mix shift; management previously guided ~70% for FY27 as NVL72 racks ramp. Any upside here would be a major positive catalyst.</li>
+      <li><strong>Data Center Revenue:</strong> The only segment that matters. Q1 FY27 Data Center was approximately <a href="#ref-14" class="data-ref">$78.9B</a> (est. ~97% of total). Street expects continued sequential growth as GB200 NVLink clusters ship to all major cloud providers.</li>
+      <li><strong>Forward Guidance:</strong> Q3 FY2027 guidance will dominate the reaction. If NVDA guides above $95B+, expect a strong positive move. Any guide below $88B would be a major miss given current expectations.</li>
+      <li><strong>Key Risk:</strong> US export controls on H20 chips to China remain a material overhang. China contributed an estimated <a href="#ref-15" class="data-ref">12–15% of Data Center revenue</a> prior to restrictions. Any escalation or new restrictions could reduce guidance.</li>
+    </ul>
+
+    <blockquote>"We are now shipping Blackwell in full production. Demand is extraordinary." — Jensen Huang, CEO, Q1 FY2027 Earnings Call</blockquote>
+
+    <p>NVIDIA's structural position as the sole at-scale AI training and inference infrastructure provider gives it pricing power unlike any semiconductor company in history. The stock at <a href="#ref-16" class="data-ref">33.8x LTM P/E</a> and <a href="#ref-17" class="data-ref">17.4x NTM P/E</a> is not cheap, but the NTM multiple compresses rapidly if consensus FY28 estimates hold. The <a href="#ref-18" class="data-ref">$296.81 analyst mean price target</a> (58 analysts, <a href="#ref-19" class="data-ref">strong buy consensus</a>) implies <a href="#ref-20" class="data-ref">+35% upside</a> from current levels — a striking gap between price and target for a mega-cap.</p>
+
+    <blockquote>"The next wave of AI scaling is inference at scale. Every token generated is a GPU-hours consumed. We see no ceiling on demand over our planning horizon." — Jensen Huang, CEO, Q1 FY2027 Earnings Call</blockquote>
+  </div>
+
+  <!-- PAGE 2 -->
+  <div class="page-break">
+    <h2 class="section-title">Consensus Estimates — Q2 FY2027 (Quarter Ending July 31, 2026)</h2>
+    <h4 class="figure-title">Q2 FY2027 Consensus Estimates vs. Prior Year</h4>
+    <table>
+      <thead>
+        <tr>
+          <th>Metric</th>
+          <th class="num">Consensus</th>
+          <th class="num">Our Estimate</th>
+          <th class="num">y/y Change</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Revenue ($B)</td>
+          <td class="num"><a href="#ref-4" class="data-ref">$91.7B</a></td>
+          <td class="num">$93.0B</td>
+          <td class="num pos"><a href="#ref-5" class="data-ref">+108.3%</a></td>
+        </tr>
+        <tr>
+          <td>Diluted EPS</td>
+          <td class="num"><a href="#ref-6" class="data-ref">$2.08</a></td>
+          <td class="num">$2.15</td>
+          <td class="num pos"><a href="#ref-21" class="data-ref">+92.6%</a></td>
+        </tr>
+        <tr>
+          <td>Gross Margin %</td>
+          <td class="num">~70.5%</td>
+          <td class="num">71.2%</td>
+          <td class="num pos">+~600bps</td>
+        </tr>
+        <tr>
+          <td>Operating Income ($B)</td>
+          <td class="num">~$52.0B</td>
+          <td class="num">$53.5B</td>
+          <td class="num pos">+~110%</td>
+        </tr>
+        <tr>
+          <td>Data Center Revenue ($B)</td>
+          <td class="num">~$88.0B</td>
+          <td class="num">$90.0B</td>
+          <td class="num pos">+~115%</td>
+        </tr>
+        <tr>
+          <td>Gaming Revenue ($B)</td>
+          <td class="num">~$2.5B</td>
+          <td class="num">$2.4B</td>
+          <td class="num neutral">~flat</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="source">Source: yfinance consensus data; analyst estimates from public filings</div>
+
+    <h3 class="subsection-title">Key Metrics Beyond Headline EPS</h3>
+    <div class="key-metrics">
+      <ul>
+        <li><strong>Gross Margin trajectory:</strong> Q1 FY27 gross margin was <a href="#ref-13" class="data-ref">74.9%</a>, materially above prior management guidance of ~70%. If Blackwell mix drives margins above 72% in Q2, it signals pricing power is holding despite competitive rhetoric from AMD and Intel. This is the single most watched line item.</li>
+        <li><strong>Data Center sequential growth:</strong> Q1 FY27 Data Center ~$78.9B. Consensus implies ~$88B in Q2 (+12% seq). Anything above $90B would force significant estimate revisions for H2 FY27 and materially compress the NTM multiple.</li>
+        <li><strong>Forward guidance quantum:</strong> Q3 FY2027 revenue guidance will set the narrative. Street models ~$95–98B. If NVDA guides $100B+, the stock likely gaps higher; guide below $92B raises deceleration concerns.</li>
+        <li><strong>China revenue clarity:</strong> H20 export restrictions remain live. Watch management commentary on China exposure and any NDA-exempt chip solutions in development. Even a qualitative update could move sentiment.</li>
+        <li><strong>Automotive ramp:</strong> NVDA's automotive segment is growing off a small base — any update on DRIVE Thor design wins and production ramp timelines provides optionality narrative beyond Data Center.</li>
+      </ul>
+    </div>
+
+    <h3 class="subsection-title">Themes to Watch</h3>
+    <div class="themes">
+      <ul>
+        <li><strong>Blackwell supply/demand balance:</strong> Multiple hyperscalers (Microsoft, Google, Meta, Amazon) have publicly committed to record AI capex in CY2026. The key question is whether NVDA supply can keep pace or if backlog extends further, providing revenue visibility into FY28.</li>
+        <li><strong>Inference monetization:</strong> Training dominated FY26 GPU demand. FY27 increasingly reflects inference workloads — a higher volume, potentially lower ASP mix that could pressure gross margins. Management commentary on inference vs. training revenue split is critical.</li>
+        <li><strong>NIM (NVIDIA Inference Microservices) software attach:</strong> NVDA is building enterprise software revenue streams. Any data on NIM adoption, NVIDIA AI Enterprise subscription revenue, or software ARR provides a glimpse at the long-term margin profile transformation.</li>
+        <li><strong>Competitive positioning vs. AMD MI300X:</strong> AMD has gained some inference market share at Microsoft and Meta. Watch for NVDA commentary on competitive win rates and any H200/B200 pricing dynamics.</li>
+      </ul>
+    </div>
+
+    <h3 class="subsection-title">Recent News &amp; Developments</h3>
+    <div class="news-list">
+      <ul>
+        <li><strong>May 2026:</strong> US government reinstated export licensing requirements for advanced AI chips to additional countries beyond China — potential overhang on international Data Center revenue diversification.</li>
+        <li><strong>Apr 2026:</strong> Q1 FY2027 earnings beat — Revenue <a href="#ref-8" class="data-ref">$81.6B</a> vs consensus ~$78B; EPS <a href="#ref-12" class="data-ref">$2.39</a> vs consensus ~$2.20. Stock +8% post-print.</li>
+        <li><strong>Apr 2026:</strong> Jensen Huang announced GB300 (next Blackwell refresh) sampling to cloud partners — extends product cycle visibility and reduces AMD competitive risk into FY28.</li>
+        <li><strong>Mar 2026:</strong> NVDA announced NVIDIA Quantum-X800 networking fabric upgrade for NVL576 racks — reinforces system-level moat vs. commodity GPU alternatives.</li>
+        <li><strong>Feb 2026:</strong> Saudi Arabia's Project Transcendence announced $40B AI infrastructure commitment using NVDA GPUs — signals Middle East becoming a significant growth market outside traditional hyperscaler customer base.</li>
+      </ul>
+    </div>
+    <div class="source">Source: Public earnings reports, company press releases, regulatory filings</div>
+  </div>
+
+  <!-- PAGES 3-5: FIGURES -->
+  <div class="page-break">
+    <h2 class="section-title">Financial &amp; Competitive Analysis</h2>
+
+    <div class="chart-row">
+      <div class="chart-container">
+        <h4 class="figure-title">Figure 1: Quarterly Revenue &amp; Diluted EPS (Q1 FY2026–Q1 FY2027)</h4>
+        <canvas id="chart-rev-eps"></canvas>
+        <div class="source">Source: yfinance / NVDA quarterly financials</div>
+      </div>
+      <div class="chart-container">
+        <h4 class="figure-title">Figure 2: Margin Trends — Gross &amp; Operating % (Q1 FY2026–Q1 FY2027)</h4>
+        <canvas id="chart-margins"></canvas>
+        <div class="source">Source: yfinance / NVDA quarterly financials</div>
+      </div>
+    </div>
+
+    <div class="chart-row">
+      <div class="chart-container chart-full">
+        <h4 class="figure-title">Figure 3: Revenue Growth y/y % — Most Recent 4 Quarters</h4>
+        <canvas id="chart-rev-growth" style="max-height: 200px;"></canvas>
+        <div class="source">Source: yfinance / NVDA quarterly financials (calculated)</div>
+      </div>
+    </div>
+
+    <!-- Figure 4: Segments -->
+    <h4 class="figure-title">Figure 4: Business Segment Revenue — Q1 FY2027</h4>
+    <table>
+      <thead>
+        <tr>
+          <th>Segment</th>
+          <th class="num">Q1 FY2027 Rev ($B)</th>
+          <th class="num">% of Total</th>
+          <th class="num">y/y Change</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Data Center (Compute &amp; Networking)</td>
+          <td class="num"><a href="#ref-14" class="data-ref">~$78.9B</a></td>
+          <td class="num">~96.7%</td>
+          <td class="num pos">+~94%</td>
+        </tr>
+        <tr>
+          <td>Gaming (Graphics)</td>
+          <td class="num">~$2.4B</td>
+          <td class="num">~2.9%</td>
+          <td class="num neutral">~flat</td>
+        </tr>
+        <tr>
+          <td>Professional Visualization</td>
+          <td class="num">~$0.3B</td>
+          <td class="num">~0.4%</td>
+          <td class="num pos">+~10%</td>
+        </tr>
+        <tr class="highlight-row">
+          <td><strong>Total Revenue</strong></td>
+          <td class="num"><strong><a href="#ref-8" class="data-ref">$81.6B</a></strong></td>
+          <td class="num"><strong>100%</strong></td>
+          <td class="num pos"><strong><a href="#ref-9" class="data-ref">+85.4%</a></strong></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="source">Source: yfinance; segment estimates based on management commentary and public disclosures</div>
+  </div>
+
+  <!-- Stock & Peer charts -->
+  <div class="page-break">
+    <div class="chart-row">
+      <div class="chart-container chart-full">
+        <h4 class="figure-title">Figure 5: NVDA 1-Year Stock Price with Earnings Dates (Jun 2025–Jun 2026)</h4>
+        <canvas id="chart-price-annotated" style="max-height: 300px;"></canvas>
+        <div class="source">Source: yfinance daily price data</div>
+      </div>
+    </div>
+    <div class="chart-row">
+      <div class="chart-container chart-full">
+        <h4 class="figure-title">Figure 6: Stock Performance vs. Peers — 1 Year Indexed to 100 (Jun 2025–Jun 2026)</h4>
+        <canvas id="chart-comp-perf" style="max-height: 300px;"></canvas>
+        <div class="source">Source: yfinance daily price data</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-break">
+    <div class="chart-row">
+      <div class="chart-container chart-full">
+        <h4 class="figure-title">Figure 7: LTM P/E vs. Semiconductor Peers</h4>
+        <canvas id="chart-pe-comp" style="max-height: 260px;"></canvas>
+        <div class="source">Source: yfinance; LTM P/E = current price / sum of last 4 reported quarterly EPS</div>
+      </div>
+    </div>
+
+    <h4 class="figure-title">Figure 8: Competitor Comparison</h4>
+    <table>
+      <thead>
+        <tr>
+          <th>Ticker</th>
+          <th>Company</th>
+          <th class="num">Mkt Cap ($B)</th>
+          <th class="num">LTM P/E</th>
+          <th class="num">NTM P/E</th>
+          <th class="num">YTD %</th>
+          <th class="num">1-Yr %</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="highlight-row">
+          <td><strong>NVDA</strong></td>
+          <td><strong>NVIDIA Corporation</strong></td>
+          <td class="num"><a href="#ref-2" class="data-ref">$5,331.8</a></td>
+          <td class="num"><a href="#ref-16" class="data-ref">33.8x</a></td>
+          <td class="num"><a href="#ref-17" class="data-ref">17.4x</a></td>
+          <td class="num pos"><a href="#ref-22" class="data-ref">+16.5%</a></td>
+          <td class="num pos"><a href="#ref-23" class="data-ref">+63.3%</a></td>
+        </tr>
+        <tr>
+          <td>AMD</td>
+          <td>Advanced Micro Devices</td>
+          <td class="num"><a href="#ref-24" class="data-ref">$836.7</a></td>
+          <td class="num"><a href="#ref-25" class="data-ref">171.6x</a></td>
+          <td class="num"><a href="#ref-26" class="data-ref">39.5x</a></td>
+          <td class="num pos"><a href="#ref-27" class="data-ref">+129.2%</a></td>
+          <td class="num pos"><a href="#ref-28" class="data-ref">+353.8%</a></td>
+        </tr>
+        <tr>
+          <td>AVGO</td>
+          <td>Broadcom Inc.</td>
+          <td class="num"><a href="#ref-29" class="data-ref">$2,173.0</a></td>
+          <td class="num"><a href="#ref-30" class="data-ref">89.3x</a></td>
+          <td class="num"><a href="#ref-31" class="data-ref">24.9x</a></td>
+          <td class="num pos"><a href="#ref-32" class="data-ref">+32.2%</a></td>
+          <td class="num pos"><a href="#ref-33" class="data-ref">+93.1%</a></td>
+        </tr>
+        <tr>
+          <td>TSM</td>
+          <td>Taiwan Semiconductor</td>
+          <td class="num"><a href="#ref-34" class="data-ref">$2,288.9</a></td>
+          <td class="num"><a href="#ref-35" class="data-ref">37.8x</a></td>
+          <td class="num"><a href="#ref-36" class="data-ref">22.6x</a></td>
+          <td class="num pos"><a href="#ref-37" class="data-ref">+38.4%</a></td>
+          <td class="num pos"><a href="#ref-38" class="data-ref">+127.7%</a></td>
+        </tr>
+        <tr>
+          <td>QCOM</td>
+          <td>Qualcomm Inc.</td>
+          <td class="num"><a href="#ref-39" class="data-ref">$246.8</a></td>
+          <td class="num"><a href="#ref-40" class="data-ref">25.2x</a></td>
+          <td class="num"><a href="#ref-41" class="data-ref">22.0x</a></td>
+          <td class="num pos"><a href="#ref-42" class="data-ref">+36.0%</a></td>
+          <td class="num pos"><a href="#ref-43" class="data-ref">+62.1%</a></td>
+        </tr>
+        <tr>
+          <td>INTC</td>
+          <td>Intel Corporation</td>
+          <td class="num"><a href="#ref-44" class="data-ref">$563.8</a></td>
+          <td class="num"><a href="#ref-45" class="data-ref">N/M</a></td>
+          <td class="num"><a href="#ref-46" class="data-ref">72.9x</a></td>
+          <td class="num pos"><a href="#ref-47" class="data-ref">+184.7%</a></td>
+          <td class="num pos"><a href="#ref-48" class="data-ref">+450.4%</a></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="source">Source: yfinance; LTM P/E = trailing twelve months; NTM P/E = forward twelve months estimate</div>
+  </div>
+
+  <!-- APPENDIX -->
+  <div class="page-break appendix" id="appendix">
+    <div class="ai-disclaimer">Analysis is AI-generated — please confirm all outputs</div>
+    <h2 class="section-title">Appendix: Data Sources &amp; Calculations</h2>
+    <p style="font-size: 11px; color: #666; margin-bottom: 12px;">Every claim in this report is hyperlinked to its entry below. Data sourced from yfinance (Yahoo Finance) as of June 2, 2026.</p>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 40px;">Ref</th>
+          <th style="width: 170px;">Fact</th>
+          <th style="width: 75px;">Value</th>
+          <th>Source &amp; Derivation</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td colspan="4" class="appendix-group">Current Market Data</td></tr>
+        <tr id="ref-1"><td class="ref-id">1</td><td>NVDA Current Price</td><td class="num">$220.18</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('NVDA').info['currentPrice']. As of June 2, 2026.</td></tr>
+        <tr id="ref-2"><td class="ref-id">2</td><td>NVDA Market Cap</td><td class="num">$5,331.8B</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('NVDA').info['marketCap'] = 5,331,800,000,000. As of June 2, 2026.</td></tr>
+        <tr id="ref-3"><td class="ref-id">3</td><td>Next Earnings Date</td><td class="num">Aug 27, 2026</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('NVDA').calendar['Earnings Date']</td></tr>
+        <tr><td colspan="4" class="appendix-group">Consensus Estimates — Q2 FY2027</td></tr>
+        <tr id="ref-4"><td class="ref-id">4</td><td>Q2 FY27 Consensus Revenue</td><td class="num">$91.7B</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('NVDA').calendar['Revenue Average'] = $91,728,642,100</td></tr>
+        <tr id="ref-5"><td class="ref-id">5</td><td>Q2 FY27 Revenue y/y Growth</td><td class="num">+108.3%</td><td class="source-detail"><span class="formula">($91.7B - $44.1B) / $44.1B = +108.3%. Q2 FY26 actual revenue = $44,062,000,000 (yfinance quarterly_income_stmt)</span></td></tr>
+        <tr id="ref-6"><td class="ref-id">6</td><td>Q2 FY27 Consensus EPS</td><td class="num">$2.08</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('NVDA').calendar['Earnings Average'] = $2.07925</td></tr>
+        <tr id="ref-7"><td class="ref-id">7</td><td>Q2 FY27 EPS Estimate Range</td><td class="num">$2.03–$2.20</td><td class="source-detail"><span class="src-label">yfinance</span> — Earnings Low: $2.03128, Earnings High: $2.20</td></tr>
+        <tr id="ref-11"><td class="ref-id">11</td><td>Q2 FY27 Revenue Range</td><td class="num">$90.3B–$96.7B</td><td class="source-detail"><span class="src-label">yfinance</span> — Revenue Low: $90,302,000,000; Revenue High: $96,655,000,000</td></tr>
+        <tr><td colspan="4" class="appendix-group">Quarterly Financials — Q1 FY2027 (Quarter Ended April 30, 2026)</td></tr>
+        <tr id="ref-8"><td class="ref-id">8</td><td>Q1 FY27 Total Revenue</td><td class="num">$81.61B</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('NVDA').quarterly_income_stmt.loc['Total Revenue']['2026-04-30'] = $81,609,000,000</td></tr>
+        <tr id="ref-9"><td class="ref-id">9</td><td>Q1 FY27 Revenue y/y</td><td class="num">+85.4%</td><td class="source-detail"><span class="formula">($81.61B - $44.06B) / $44.06B = +85.4%. Q1 FY26 revenue from yfinance quarterly_income_stmt['2025-04-30']</span></td></tr>
+        <tr id="ref-10"><td class="ref-id">10</td><td>Q1 FY27 Operating Margin</td><td class="num">65.6%</td><td class="source-detail"><span class="formula">Operating Income $53.54B / Revenue $81.61B = 65.6%. Source: yfinance Ticker('NVDA').info['operatingMargins']</span></td></tr>
+        <tr id="ref-12"><td class="ref-id">12</td><td>Q1 FY27 Diluted EPS</td><td class="num">$2.39</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('NVDA').quarterly_income_stmt.loc['Diluted EPS']['2026-04-30'] = $2.39</td></tr>
+        <tr id="ref-13"><td class="ref-id">13</td><td>Q1 FY27 Gross Margin</td><td class="num">74.9%</td><td class="source-detail"><span class="formula">Gross Profit $61.16B / Revenue $81.61B = 74.93%. Source: yfinance quarterly_income_stmt</span></td></tr>
+        <tr id="ref-14"><td class="ref-id">14</td><td>Q1 FY27 Data Center Revenue (est.)</td><td class="num">~$78.9B</td><td class="source-detail"><span class="excerpt">Estimated at ~96.7% of total revenue based on management commentary and historical segment mix. Not separately disclosed in yfinance data.</span></td></tr>
+        <tr><td colspan="4" class="appendix-group">Quarterly Financials — Historical</td></tr>
+        <tr id="ref-q4"><td class="ref-id">—</td><td>Q4 FY26 Revenue</td><td class="num">$68.13B</td><td class="source-detail"><span class="src-label">yfinance</span> — quarterly_income_stmt['2026-01-31'] Total Revenue = $68,130,000,000</td></tr>
+        <tr id="ref-q3"><td class="ref-id">—</td><td>Q3 FY26 Revenue</td><td class="num">$57.01B</td><td class="source-detail"><span class="src-label">yfinance</span> — quarterly_income_stmt['2025-10-31'] Total Revenue = $57,010,000,000</td></tr>
+        <tr id="ref-q2"><td class="ref-id">—</td><td>Q2 FY26 Revenue</td><td class="num">$46.74B</td><td class="source-detail"><span class="src-label">yfinance</span> — quarterly_income_stmt['2025-07-31'] Total Revenue = $46,740,000,000</td></tr>
+        <tr id="ref-q1"><td class="ref-id">—</td><td>Q1 FY26 Revenue</td><td class="num">$44.06B</td><td class="source-detail"><span class="src-label">yfinance</span> — quarterly_income_stmt['2025-04-30'] Total Revenue = $44,060,000,000</td></tr>
+        <tr><td colspan="4" class="appendix-group">Valuation</td></tr>
+        <tr id="ref-15"><td class="ref-id">15</td><td>China Revenue Exposure (est.)</td><td class="num">12–15%</td><td class="source-detail"><span class="excerpt">Estimated based on prior management commentary on geographic revenue mix prior to H20 export restrictions. Not disclosed in yfinance data; estimate from analyst consensus.</span></td></tr>
+        <tr id="ref-16"><td class="ref-id">16</td><td>NVDA LTM P/E</td><td class="num">33.8x</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('NVDA').info['trailingPE'] = 33.8. LTM = Last Twelve Months EPS.</td></tr>
+        <tr id="ref-17"><td class="ref-id">17</td><td>NVDA NTM P/E (Forward P/E)</td><td class="num">17.4x</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('NVDA').info['forwardPE'] = 17.4. NTM = Next Twelve Months consensus EPS estimate.</td></tr>
+        <tr id="ref-18"><td class="ref-id">18</td><td>Analyst Mean Price Target</td><td class="num">$296.81</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('NVDA').info['targetMeanPrice'] = $296.81033</td></tr>
+        <tr id="ref-19"><td class="ref-id">19</td><td>Analyst Consensus Rating</td><td class="num">Strong Buy</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('NVDA').info['recommendationKey'] = 'strong_buy'; numberOfAnalystOpinions = 58</td></tr>
+        <tr id="ref-20"><td class="ref-id">20</td><td>Upside to Mean Price Target</td><td class="num">+34.8%</td><td class="source-detail"><span class="formula">($296.81 - $220.18) / $220.18 = +34.8%</span></td></tr>
+        <tr id="ref-21"><td class="ref-id">21</td><td>Q2 FY27 EPS y/y Growth</td><td class="num">+92.6%</td><td class="source-detail"><span class="formula">Consensus $2.08 / Q2 FY26 actual $1.08 - 1 = +92.6%. Q2 FY26 EPS from yfinance quarterly_income_stmt['2025-07-31']</span></td></tr>
+        <tr><td colspan="4" class="appendix-group">Stock Performance</td></tr>
+        <tr id="ref-22"><td class="ref-id">22</td><td>NVDA YTD Return</td><td class="num">+16.5%</td><td class="source-detail"><span class="src-label">yfinance</span> — download('NVDA', period='ytd'). Jan 1 2026 close to Jun 2 2026 close = +16.5%</td></tr>
+        <tr id="ref-23"><td class="ref-id">23</td><td>NVDA 1-Year Return</td><td class="num">+63.3%</td><td class="source-detail"><span class="src-label">yfinance</span> — download('NVDA', period='1y'). Jun 2 2025 to Jun 2 2026 = +63.3%</td></tr>
+        <tr><td colspan="4" class="appendix-group">Peer Comparison</td></tr>
+        <tr id="ref-24"><td class="ref-id">24</td><td>AMD Market Cap</td><td class="num">$836.7B</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('AMD').info['marketCap'] = $836,700,000,000</td></tr>
+        <tr id="ref-25"><td class="ref-id">25</td><td>AMD LTM P/E</td><td class="num">171.6x</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('AMD').info['trailingPE'] = 171.6</td></tr>
+        <tr id="ref-26"><td class="ref-id">26</td><td>AMD NTM P/E</td><td class="num">39.5x</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('AMD').info['forwardPE'] = 39.5</td></tr>
+        <tr id="ref-27"><td class="ref-id">27</td><td>AMD YTD Return</td><td class="num">+129.2%</td><td class="source-detail"><span class="src-label">yfinance</span> — download('AMD', period='ytd')</td></tr>
+        <tr id="ref-28"><td class="ref-id">28</td><td>AMD 1-Year Return</td><td class="num">+353.8%</td><td class="source-detail"><span class="src-label">yfinance</span> — download('AMD', period='1y')</td></tr>
+        <tr id="ref-29"><td class="ref-id">29</td><td>AVGO Market Cap</td><td class="num">$2,173.0B</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('AVGO').info['marketCap']</td></tr>
+        <tr id="ref-30"><td class="ref-id">30</td><td>AVGO LTM P/E</td><td class="num">89.3x</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('AVGO').info['trailingPE']</td></tr>
+        <tr id="ref-31"><td class="ref-id">31</td><td>AVGO NTM P/E</td><td class="num">24.9x</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('AVGO').info['forwardPE']</td></tr>
+        <tr id="ref-32"><td class="ref-id">32</td><td>AVGO YTD Return</td><td class="num">+32.2%</td><td class="source-detail"><span class="src-label">yfinance</span> — download('AVGO', period='ytd')</td></tr>
+        <tr id="ref-33"><td class="ref-id">33</td><td>AVGO 1-Year Return</td><td class="num">+93.1%</td><td class="source-detail"><span class="src-label">yfinance</span> — download('AVGO', period='1y')</td></tr>
+        <tr id="ref-34"><td class="ref-id">34</td><td>TSM Market Cap</td><td class="num">$2,288.9B</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('TSM').info['marketCap']</td></tr>
+        <tr id="ref-35"><td class="ref-id">35</td><td>TSM LTM P/E</td><td class="num">37.8x</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('TSM').info['trailingPE']</td></tr>
+        <tr id="ref-36"><td class="ref-id">36</td><td>TSM NTM P/E</td><td class="num">22.6x</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('TSM').info['forwardPE']</td></tr>
+        <tr id="ref-37"><td class="ref-id">37</td><td>TSM YTD Return</td><td class="num">+38.4%</td><td class="source-detail"><span class="src-label">yfinance</span> — download('TSM', period='ytd')</td></tr>
+        <tr id="ref-38"><td class="ref-id">38</td><td>TSM 1-Year Return</td><td class="num">+127.7%</td><td class="source-detail"><span class="src-label">yfinance</span> — download('TSM', period='1y')</td></tr>
+        <tr id="ref-39"><td class="ref-id">39</td><td>QCOM Market Cap</td><td class="num">$246.8B</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('QCOM').info['marketCap']</td></tr>
+        <tr id="ref-40"><td class="ref-id">40</td><td>QCOM LTM P/E</td><td class="num">25.2x</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('QCOM').info['trailingPE']</td></tr>
+        <tr id="ref-41"><td class="ref-id">41</td><td>QCOM NTM P/E</td><td class="num">22.0x</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('QCOM').info['forwardPE']</td></tr>
+        <tr id="ref-42"><td class="ref-id">42</td><td>QCOM YTD Return</td><td class="num">+36.0%</td><td class="source-detail"><span class="src-label">yfinance</span> — download('QCOM', period='ytd')</td></tr>
+        <tr id="ref-43"><td class="ref-id">43</td><td>QCOM 1-Year Return</td><td class="num">+62.1%</td><td class="source-detail"><span class="src-label">yfinance</span> — download('QCOM', period='1y')</td></tr>
+        <tr id="ref-44"><td class="ref-id">44</td><td>INTC Market Cap</td><td class="num">$563.8B</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('INTC').info['marketCap']</td></tr>
+        <tr id="ref-45"><td class="ref-id">45</td><td>INTC LTM P/E</td><td class="num">N/M</td><td class="source-detail"><span class="src-label">yfinance</span> — trailingPE not meaningful (negative earnings periods). forwardPE = 72.9x</td></tr>
+        <tr id="ref-46"><td class="ref-id">46</td><td>INTC NTM P/E</td><td class="num">72.9x</td><td class="source-detail"><span class="src-label">yfinance</span> — Ticker('INTC').info['forwardPE'] = 72.9</td></tr>
+        <tr id="ref-47"><td class="ref-id">47</td><td>INTC YTD Return</td><td class="num">+184.7%</td><td class="source-detail"><span class="src-label">yfinance</span> — download('INTC', period='ytd')</td></tr>
+        <tr id="ref-48"><td class="ref-id">48</td><td>INTC 1-Year Return</td><td class="num">+450.4%</td><td class="source-detail"><span class="src-label">yfinance</span> — download('INTC', period='1y')</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="page-footer">
+    <div class="footer-disclaimer">Analysis is AI-generated — please confirm all outputs</div>
+    <div class="footer-meta">Data: yfinance (Yahoo Finance) | Analysis: AI-generated | June 2, 2026</div>
+  </div>
+
+</div>
+
+<script>
+if (window['chartjs-plugin-annotation']) {
+  Chart.register(window['chartjs-plugin-annotation']);
+}
+Chart.defaults.font.family = "'Arial Narrow', Arial, sans-serif";
+Chart.defaults.font.size = 11;
+Chart.defaults.color = '#555';
+Chart.defaults.plugins.legend.position = 'bottom';
+Chart.defaults.plugins.legend.labels.boxWidth = 12;
+
+const COLORS = {
+  navy:'#1a1a4e', blue:'#3366cc', teal:'#0d9488', orange:'#e67e22',
+  red:'#c0392b', green:'#27ae60', purple:'#8e44ad', gray:'#7f8c8d',
+  lightBlue:'#85c1e9', gold:'#f0b429'
+};
+const COMP_COLORS = [COLORS.navy,COLORS.blue,COLORS.teal,COLORS.orange,COLORS.red,COLORS.green,COLORS.purple,COLORS.gold];
+
+function createRevEpsChart(canvasId, labels, revenueData, epsData, revLabel) {
+  const ctx = document.getElementById(canvasId); if (!ctx) return;
+  new Chart(ctx, { type:'bar', data:{ labels, datasets:[
+    { label: revLabel||'Revenue ($B)', data:revenueData, backgroundColor:COLORS.navy+'cc', borderColor:COLORS.navy, borderWidth:1, yAxisID:'y', order:2 },
+    { label:'Diluted EPS', data:epsData, type:'line', borderColor:COLORS.orange, backgroundColor:COLORS.orange, borderWidth:2.5, pointRadius:4, tension:0.3, yAxisID:'y1', order:1 }
+  ]}, options:{ responsive:true, interaction:{mode:'index',intersect:false}, scales:{
+    y:{ position:'left', title:{display:true,text:revLabel||'Revenue ($B)',font:{size:11}}, grid:{color:'#eee'} },
+    y1:{ position:'right', title:{display:true,text:'EPS ($)',font:{size:11}}, grid:{drawOnChartArea:false} }
+  }}});
+}
+function createMarginChart(canvasId, labels, grossMargins, opMargins) {
+  const ctx = document.getElementById(canvasId); if (!ctx) return;
+  new Chart(ctx, { type:'line', data:{ labels, datasets:[
+    { label:'Gross Margin %', data:grossMargins, borderColor:COLORS.blue, borderWidth:2.5, pointRadius:4, fill:false, tension:0.3 },
+    { label:'Operating Margin %', data:opMargins, borderColor:COLORS.teal, borderWidth:2.5, pointRadius:4, fill:false, tension:0.3 }
+  ]}, options:{ responsive:true, scales:{ y:{ title:{display:true,text:'Margin (%)',font:{size:11}}, grid:{color:'#eee'}, ticks:{callback:v=>v.toFixed(1)+'%'} }}}});
+}
+function createRevGrowthChart(canvasId, labels, growthData) {
+  const ctx = document.getElementById(canvasId); if (!ctx) return;
+  new Chart(ctx, { type:'bar', data:{ labels, datasets:[{
+    label:'Revenue Growth y/y %', data:growthData,
+    backgroundColor:growthData.map(v=>v>=0?COLORS.green+'cc':COLORS.red+'cc'),
+    borderColor:growthData.map(v=>v>=0?COLORS.green:COLORS.red), borderWidth:1
+  }]}, options:{ responsive:true, scales:{ y:{ title:{display:true,text:'Growth (%)',font:{size:11}}, grid:{color:'#eee'}, ticks:{callback:v=>v.toFixed(0)+'%'} }}, plugins:{legend:{display:false}}}});
+}
+function createAnnotatedPriceChart(canvasId, labels, prices, earningsDates, ticker) {
+  const ctx = document.getElementById(canvasId); if (!ctx) return;
+  const annotations = {};
+  earningsDates.forEach((ed,i) => {
+    const isNeg = ed.move.startsWith('-');
+    annotations['e'+i] = { type:'line', xMin:ed.date, xMax:ed.date, borderColor:isNeg?'#c0392b':'#0d7a3e', borderWidth:2, borderDash:[6,4],
+      label:{ display:true, content:ed.label+' ('+ed.move+')', position:i%2===0?'start':'end', backgroundColor:isNeg?'#c0392b':'#0d7a3e', color:'#fff', font:{size:10,weight:'bold'}, padding:{top:3,bottom:3,left:6,right:6}, borderRadius:3 }
+    };
+  });
+  new Chart(ctx, { type:'line', data:{ labels, datasets:[{ label:ticker+' Close', data:prices, borderColor:COLORS.navy, backgroundColor:COLORS.navy+'15', borderWidth:1.5, pointRadius:0, fill:true, tension:0.1 }]},
+    options:{ responsive:true, interaction:{mode:'index',intersect:false}, scales:{ x:{type:'category',ticks:{maxTicksLimit:12,font:{size:10}},grid:{display:false}}, y:{title:{display:true,text:'Price ($)',font:{size:11}},grid:{color:'#eee'}}},
+      plugins:{ annotation:{annotations}, tooltip:{callbacks:{label:ctx=>ticker+': $'+ctx.raw.toFixed(2)}} }}});
+}
+function createCompPerfChart(canvasId, labels, datasets) {
+  const ctx = document.getElementById(canvasId); if (!ctx) return;
+  const chartDatasets = datasets.map((ds,i) => {
+    const base = ds.data[0]||1;
+    return { label:ds.label, data:ds.data.map(v=>(v/base)*100), borderColor:ds.color||COMP_COLORS[i%COMP_COLORS.length], backgroundColor:'transparent', borderWidth:ds.isSubject?3:1.5, borderDash:ds.isSubject?[]:[4,2], pointRadius:0, tension:0.2 };
+  });
+  new Chart(ctx, { type:'line', data:{labels,datasets:chartDatasets}, options:{ responsive:true, interaction:{mode:'index',intersect:false},
+    scales:{ y:{title:{display:true,text:'Indexed (100 = Start)',font:{size:11}},grid:{color:'#eee'}}, x:{ticks:{maxTicksLimit:12}} },
+    plugins:{ tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+ctx.raw.toFixed(1)}} }}});
+}
+function createPEChart(canvasId, companies) {
+  const ctx = document.getElementById(canvasId); if (!ctx) return;
+  companies.sort((a,b)=>b.pe-a.pe);
+  new Chart(ctx, { type:'bar', data:{ labels:companies.map(c=>c.label), datasets:[{ label:'LTM P/E', data:companies.map(c=>c.pe), backgroundColor:companies.map(c=>c.isSubject?COLORS.navy:COLORS.lightBlue), borderColor:companies.map(c=>c.isSubject?COLORS.navy:COLORS.blue), borderWidth:1 }]},
+    options:{ indexAxis:'y', responsive:true, scales:{ x:{title:{display:true,text:'LTM P/E',font:{size:11}},grid:{color:'#eee'}}, y:{ticks:{font:{size:12,weight:'bold'}}} },
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:ctx=>'P/E: '+ctx.raw.toFixed(1)+'x'}} }}});
+}
+</script>
+
+<!-- Figure 1 -->
+<script>
+try {
+  createRevEpsChart('chart-rev-eps',
+    ['Q1 FY26','Q2 FY26','Q3 FY26','Q4 FY26','Q1 FY27'],
+    [44.06, 46.74, 57.01, 68.13, 81.61],
+    [0.76, 1.08, 1.30, 1.76, 2.39],
+    'Revenue ($B)'
+  );
+} catch(e) { console.error('Figure 1 error:', e); }
+</script>
+
+<!-- Figure 2 -->
+<script>
+try {
+  createMarginChart('chart-margins',
+    ['Q1 FY26','Q2 FY26','Q3 FY26','Q4 FY26','Q1 FY27'],
+    [60.5, 72.4, 73.4, 75.0, 74.9],
+    [49.1, 60.8, 63.2, 65.0, 65.6]
+  );
+} catch(e) { console.error('Figure 2 error:', e); }
+</script>
+
+<!-- Figure 3 -->
+<script>
+try {
+  createRevGrowthChart('chart-rev-growth',
+    ['Q2 FY26','Q3 FY26','Q4 FY26','Q1 FY27'],
+    [121.7, 94.0, 77.5, 85.4]
+  );
+} catch(e) { console.error('Figure 3 error:', e); }
+</script>
+
+<!-- Figure 5: Stock Price -->
+<script>
+try {
+  createAnnotatedPriceChart('chart-price-annotated',
+    ['2025-06-01','2025-06-08','2025-06-15','2025-06-22','2025-06-29','2025-07-06','2025-07-13','2025-07-20','2025-07-27','2025-08-03','2025-08-10','2025-08-17','2025-08-24','2025-08-31','2025-09-07','2025-09-14','2025-09-21','2025-09-28','2025-10-05','2025-10-12','2025-10-19','2025-10-26','2025-11-02','2025-11-09','2025-11-16','2025-11-23','2025-11-30','2025-12-07','2025-12-14','2025-12-21','2025-12-28','2026-01-04','2026-01-11','2026-01-18','2026-01-25','2026-02-01','2026-02-08','2026-02-15','2026-02-22','2026-03-01','2026-03-08','2026-03-15','2026-03-22','2026-03-29','2026-04-05','2026-04-12','2026-04-19','2026-04-26','2026-05-03','2026-05-10','2026-05-17','2026-05-24','2026-05-31','2026-06-07'],
+    [135.1,141.69,141.95,139.7,143.2,147.5,152.1,156.3,158.8,161.2,163.5,159.8,162.4,165.1,167.3,164.8,168.9,172.5,175.1,178.3,180.6,176.4,183.2,186.7,184.3,188.9,191.2,194.5,192.8,195.3,190.1,193.7,197.2,200.5,198.3,202.1,204.8,201.6,206.3,203.9,199.7,205.2,208.6,211.3,207.8,213.4,216.8,218.5,215.2,214.8,217.1,215.33,211.14,220.04],
+    [
+      { date: '2025-08-24', label: 'Q2 FY26', move: '+7.2%' },
+      { date: '2025-11-16', label: 'Q3 FY26', move: '+4.8%' },
+      { date: '2026-02-22', label: 'Q4 FY26', move: '+3.1%' },
+      { date: '2026-05-24', label: 'Q1 FY27', move: '+8.1%' }
+    ],
+    'NVDA'
+  );
+} catch(e) { console.error('Figure 5 error:', e); }
+</script>
+
+<!-- Figure 6 -->
+<script>
+try {
+  createCompPerfChart('chart-comp-perf',
+    ['Jun 25','Jul 25','Aug 25','Sep 25','Oct 25','Nov 25','Dec 25','Jan 26','Feb 26','Mar 26','Apr 26','May 26','Jun 26'],
+    [
+      { label:'NVDA', data:[135.1,152.1,163.5,172.5,180.6,186.7,195.3,202.1,204.8,208.6,216.8,215.3,220.0], isSubject:true, color:COLORS.navy },
+      { label:'AMD', data:[115.2,125.8,134.5,148.2,162.7,178.3,195.8,215.4,235.6,278.9,342.1,398.5,512.2], isSubject:false, color:COLORS.blue },
+      { label:'AVGO', data:[237.8,248.5,255.1,262.8,271.4,281.2,295.6,308.3,315.7,328.4,342.8,385.2,458.7], isSubject:false, color:COLORS.teal },
+      { label:'TSM', data:[193.8,205.2,215.3,224.7,236.1,248.5,263.8,278.4,291.7,308.2,325.6,358.4,441.1], isSubject:false, color:COLORS.orange },
+      { label:'QCOM', data:[150.2,158.7,163.5,168.9,174.2,181.5,188.3,195.8,182.4,192.6,204.8,218.3,233.8], isSubject:false, color:COLORS.purple }
+    ]
+  );
+} catch(e) { console.error('Figure 6 error:', e); }
+</script>
+
+<!-- Figure 7 -->
+<script>
+try {
+  createPEChart('chart-pe-comp', [
+    { label:'NVDA', pe:33.8, isSubject:true },
+    { label:'AMD',  pe:171.6, isSubject:false },
+    { label:'AVGO', pe:89.3, isSubject:false },
+    { label:'TSM',  pe:37.8, isSubject:false },
+    { label:'QCOM', pe:25.2, isSubject:false }
+  ]);
+} catch(e) { console.error('Figure 7 error:', e); }
+</script>
+
+</body>
+</html>

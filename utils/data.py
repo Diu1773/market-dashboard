@@ -1,10 +1,27 @@
 """데이터 수집 모듈 — yfinance 캐시 계층."""
 from __future__ import annotations
 import datetime as dt
+import os
 import numpy as np
 import pandas as pd
 import streamlit as st
 import yfinance as yf
+
+_HIST_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "history.csv")
+
+
+@st.cache_data(ttl=60 * 60)
+def load_history() -> pd.DataFrame:
+    """GitHub Actions가 쌓은 일일 시장 스냅샷 히스토리."""
+    try:
+        path = os.path.abspath(_HIST_PATH)
+        if not os.path.exists(path):
+            return pd.DataFrame()
+        df = pd.read_csv(path)
+        df["date"] = pd.to_datetime(df["date"])
+        return df.sort_values("date")
+    except Exception:
+        return pd.DataFrame()
 
 
 # ── 내부 구현 ──────────────────────────────────────────────────
